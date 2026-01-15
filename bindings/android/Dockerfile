@@ -33,5 +33,9 @@ WORKDIR /workspace
 # Copy the source
 COPY . /workspace/
 
+# Download dependencies and install bind package
+RUN go mod download && \
+    go install golang.org/x/mobile/cmd/gobind@latest
+
 # Build the AAR during image build
-RUN cd /workspace && gomobile bind -target=android -androidapi=21 -o bindings/android/build/waengine.aar .
+RUN gomobile bind -target=android -androidapi=21 -o bindings/android/build/waengine.aar .
