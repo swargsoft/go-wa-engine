@@ -36,8 +36,8 @@ func (e *Engine) GetUserProfile(jid string) (string, error) {
 	}
 
 	// Get user info from store
-	info, err := client.Store.Contacts.GetContact(parsedJID)
-	if err == nil && info != nil {
+	info, err := client.Store.Contacts.GetContact(context.Background(), parsedJID)
+	if err == nil {
 		profile.PushName = info.PushName
 		profile.BusinessName = info.BusinessName
 	}

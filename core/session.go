@@ -288,7 +288,7 @@ func (sm *SessionManager) LogoutSession(sessionName string) error {
 		if client != nil {
 			whatsmeowClient := client.GetClient()
 			if whatsmeowClient != nil {
-				err := whatsmeowClient.Logout()
+				err := whatsmeowClient.Logout(context.Background())
 				if err != nil {
 					// Log but continue with cleanup
 					fmt.Printf("Logout request failed: %v\n", err)
