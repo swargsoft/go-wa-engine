@@ -271,6 +271,48 @@ func (sm *SessionManager) RemoveSession(sessionName string) error {
 	return nil
 }
 
+// LogoutSession logs out from WhatsApp and removes all session data.
+// This sends a logout request to WhatsApp servers before cleanup.
+func (sm *SessionManager) LogoutSession(sessionName string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	engine, exists := sm.sessions[sessionName]
+	if !exists {
+		return fmt.Errorf("%w: '%s'", ErrSessionNotFound, sessionName)
+	}
+
+	// Send logout to WhatsApp if connected
+	if engine.IsConnected() {
+		client := engine.GetClient()
+		if client != nil {
+			whatsmeowClient := client.GetClient()
+			if whatsmeowClient != nil {
+				err := whatsmeowClient.Logout()
+				if err != nil {
+					// Log but continue with cleanup
+					fmt.Printf("Logout request failed: %v\n", err)
+				}
+			}
+		}
+	}
+
+	// Stop the engine
+	engine.Stop()
+
+	// Remove from map
+	delete(sm.sessions, sessionName)
+
+	// Delete session directory
+	sessionDir := filepath.Join(sm.dataDir, sessionName)
+	if err := os.RemoveAll(sessionDir); err != nil {
+		return fmt.Errorf("%w: failed to delete session directory: %v",
+			ErrStorageFailed, err)
+	}
+
+	return nil
+}
+
 // ----- Status Methods -----
 
 // IsPaired checks if a session has a stored authentication.
