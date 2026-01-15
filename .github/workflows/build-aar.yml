@@ -18,10 +18,9 @@ jobs:
 
       - name: Build AAR in Docker
         run: |
-          cd bindings/android
-          docker build -t wa-engine-builder ../..
+          docker build -f bindings/android/Dockerfile -t wa-engine-builder .
           docker run --name temp-builder wa-engine-builder
-          docker cp temp-builder:/workspace/wa-engine/bindings/android/build/waengine.aar ./build/
+          docker cp temp-builder:/workspace/wa-engine/bindings/android/build/waengine.aar ./bindings/android/build/
           docker rm temp-builder
 
       - name: Get version from tag
