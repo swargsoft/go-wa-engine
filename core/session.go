@@ -284,7 +284,7 @@ func (sm *SessionManager) LogoutSession(sessionName string) error {
 
 	// Send logout to WhatsApp if connected
 	if engine.IsConnected() {
-		client := engine.GetClient()
+		client := engine.client
 		if client != nil {
 			whatsmeowClient := client.GetClient()
 			if whatsmeowClient != nil {
