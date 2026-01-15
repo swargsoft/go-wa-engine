@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"go.mau.fi/whatsmeow/types"
 )
@@ -20,17 +19,17 @@ type ProfileInfo struct {
 }
 
 // GetUserProfile fetches profile information for a JID
-func (s *Session) GetUserProfile(jid string) (string, error) {
-	if !s.IsConnected() {
-		return "", NewError(ErrCodeNotConnected, "Session not connected")
+func (e *Engine) GetUserProfile(jid string) (string, error) {
+	if !e.IsConnected() {
+		return "", NewError(ErrCodeNotConnected, "Engine not connected")
 	}
 
 	parsedJID, err := types.ParseJID(jid)
 	if err != nil {
-		return "", WrapError(ErrCodeInvalidInput, "Invalid JID", err)
+		return "", WrapError(ErrCodeInvalidJID, "Invalid JID", err)
 	}
 
-	client := s.client.GetClient()
+	client := e.client.GetClient()
 	
 	profile := ProfileInfo{
 		JID: jid,
@@ -56,22 +55,22 @@ func (s *Session) GetUserProfile(jid string) (string, error) {
 
 	result, err := json.Marshal(profile)
 	if err != nil {
-		return "", WrapError(ErrCodeEncodingFailed, "Failed to encode profile", err)
+		return "", WrapError(ErrCodeInternal, "Failed to encode profile", err)
 	}
 
 	return string(result), nil
 }
 
 // GetOwnProfile gets the profile of the logged-in user
-func (s *Session) GetOwnProfile() (string, error) {
-	if !s.IsConnected() {
-		return "", NewError(ErrCodeNotConnected, "Session not connected")
+func (e *Engine) GetOwnProfile() (string, error) {
+	if !e.IsConnected() {
+		return "", NewError(ErrCodeNotConnected, "Engine not connected")
 	}
 
-	jid := s.client.GetClient().Store.ID
+	jid := e.client.GetClient().Store.ID
 	if jid == nil {
 		return "", NewError(ErrCodeNotInitialized, "User JID not available")
 	}
 
-	return s.GetUserProfile(jid.String())
+	return e.GetUserProfile(jid.String())
 }
