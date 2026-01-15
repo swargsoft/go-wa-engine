@@ -1,0 +1,6 @@
+.git
+.gitignore
+node_modules
+bindings/android/build/*
+bindings/react-native/node_modules
+*.log

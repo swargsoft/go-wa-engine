@@ -1,0 +1,70 @@
+# Binaries
+*.aar
+*.so
+*.a
+*.exe
+
+# Build outputs
+build/
+dist/
+bin/
+*.test
+*.out
+
+# Go
+vendor/
+*.mod.sum
+
+# Node.js (for React Native bindings)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Android
+*.apk
+*.aab
+local.properties
+.gradle/
+.cxx/
+*.iml
+
+# iOS
+*.xcworkspace
+!default.xcworkspace
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+Pods/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+.env
+.env.local
+
+# Test coverage
+coverage/
+*.coverprofile
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Database files (test data)
+*.db
+*.db-shm
+*.db-wal
