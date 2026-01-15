@@ -33,9 +33,5 @@ WORKDIR /workspace
 # Copy the source
 COPY . /workspace/
 
-# Download dependencies and reinitialize gomobile for this module
-RUN go mod download && \
-    gomobile init -v
-
-# Build the AAR during image build
-RUN gomobile bind -target=android -androidapi=21 -o bindings/android/build/waengine.aar .
+# Command to build AAR at runtime
+CMD ["sh", "-c", "go mod download && go get golang.org/x/mobile/bind && gomobile bind -v -target=android -androidapi=21 -o bindings/android/build/waengine.aar . 2>&1"]
