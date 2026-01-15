@@ -33,5 +33,5 @@ WORKDIR /workspace
 # Copy the source
 COPY . /workspace/
 
-# Command to build AAR  
-CMD ["sh", "-c", "cd /workspace && go mod download && go get golang.org/x/mobile/bind && gomobile bind -v -target=android -androidapi=21 -o bindings/android/build/waengine.aar github.com/mml/wa-engine 2>&1"]
+# Build the AAR during image build
+RUN cd /workspace && gomobile bind -target=android -androidapi=21 -o bindings/android/build/waengine.aar .

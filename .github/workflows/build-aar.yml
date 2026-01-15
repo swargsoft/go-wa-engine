@@ -20,7 +20,7 @@ jobs:
         run: |
           mkdir -p bindings/android/build
           docker build -f bindings/android/Dockerfile -t wa-engine-builder .
-          docker run --name temp-builder wa-engine-builder sh -c "cd /workspace && gomobile bind -target=android -androidapi=21 -o bindings/android/build/waengine.aar ."
+          docker create --name temp-builder wa-engine-builder
           docker cp temp-builder:/workspace/bindings/android/build/waengine.aar ./bindings/android/build/waengine.aar
           docker rm temp-builder
 
