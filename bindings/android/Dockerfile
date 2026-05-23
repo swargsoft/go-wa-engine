@@ -1,6 +1,6 @@
 FROM --platform=linux/amd64 golang:1.24-bookworm
 
-# Install dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     openjdk-17-jdk \
     unzip \
@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Android SDK command-line tools
+# Android SDK
 ENV ANDROID_HOME=/opt/android-sdk
 RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
     cd ${ANDROID_HOME}/cmdline-tools && \
@@ -17,21 +17,32 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
     rm commandlinetools-linux-9477386_latest.zip && \
     mv cmdline-tools latest
 
-# Install Android NDK
 ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${PATH}"
 RUN yes | sdkmanager --licenses && \
     sdkmanager "ndk;25.1.8937393" "platform-tools" "platforms;android-21"
 
-# Install gomobile (latest version works with Go 1.24+)
+# gomobile
 ENV GOPATH=/go
 ENV PATH="${GOPATH}/bin:${PATH}"
 RUN go install golang.org/x/mobile/cmd/gomobile@latest && \
     gomobile init -v
 
 WORKDIR /workspace
-
-# Copy the source
 COPY . /workspace/
 
-# Command to build AAR at runtime
-CMD ["sh", "-c", "go mod download && go get golang.org/x/mobile/bind && gomobile bind -v -target=android -androidapi=21 -o bindings/android/build/waengine.aar . 2>&1"]
+# Build the AAR.
+# We bind the root package (waengine) which exports:
+#   - StartHTTPServer(port int, dataDir string) string
+#   - StopHTTPServer()
+#   - IsServerRunning() bool
+# The PWA communicates with the engine over localhost HTTP —
+# no other Go symbols need to be exported to Android.
+CMD ["sh", "-c", \
+  "go mod download && \
+   gomobile bind \
+     -v \
+     -target=android \
+     -androidapi=21 \
+     -o bindings/android/build/waengine.aar \
+     github.com/mml/wa-engine \
+   2>&1"]

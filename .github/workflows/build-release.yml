@@ -1,0 +1,199 @@
+name: Build and release all platforms
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# One job per platform so they run in parallel.
+# All artifacts are collected by the final release job.
+jobs:
+
+  # ── Linux amd64 ──────────────────────────────────────────────────────────────
+  build-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install gcc (CGO for SQLite)
+        run: sudo apt-get install -y gcc
+      - name: Build
+        run: |
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+            go build -ldflags="-s -w" -o wa-server-linux-amd64 ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: wa-server-linux-amd64
+
+  # ── Linux arm64 ──────────────────────────────────────────────────────────────
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install arm64 cross-compiler
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Build
+        run: |
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
+            CC=aarch64-linux-gnu-gcc \
+            go build -ldflags="-s -w" -o wa-server-linux-arm64 ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64
+          path: wa-server-linux-arm64
+
+  # ── macOS Intel ──────────────────────────────────────────────────────────────
+  build-mac-amd64:
+    runs-on: macos-13       # Intel runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Build
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
+            go build -ldflags="-s -w" -o wa-server-mac-amd64 ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-amd64
+          path: wa-server-mac-amd64
+
+  # ── macOS Apple Silicon ───────────────────────────────────────────────────────
+  build-mac-arm64:
+    runs-on: macos-14       # Apple Silicon (M1/M2) runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Build
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+            go build -ldflags="-s -w" -o wa-server-mac-arm64 ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-arm64
+          path: wa-server-mac-arm64
+
+  # ── Windows amd64 ────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Build
+        run: |
+          $env:CGO_ENABLED = "1"
+          go build -ldflags="-s -w" -o wa-server-windows-amd64.exe ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: wa-server-windows-amd64.exe
+
+  # ── Android AAR (via Docker + gomobile) ──────────────────────────────────────
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build AAR in Docker
+        run: |
+          mkdir -p bindings/android/build
+          docker build \
+            --platform=linux/amd64 \
+            -f bindings/android/Dockerfile \
+            -t wa-engine-builder .
+          docker run --name tmp-builder wa-engine-builder
+          docker cp tmp-builder:/workspace/bindings/android/build/waengine.aar \
+            ./bindings/android/build/waengine.aar
+          docker rm tmp-builder
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aar
+          path: bindings/android/build/waengine.aar
+
+  # ── Publish GitHub Release ────────────────────────────────────────────────────
+  release:
+    needs:
+      - build-linux-amd64
+      - build-linux-arm64
+      - build-mac-amd64
+      - build-mac-arm64
+      - build-windows
+      - build-android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: WA Engine ${{ steps.version.outputs.VERSION }}
+          files: |
+            dist/linux-amd64/wa-server-linux-amd64
+            dist/linux-arm64/wa-server-linux-arm64
+            dist/mac-amd64/wa-server-mac-amd64
+            dist/mac-arm64/wa-server-mac-arm64
+            dist/windows-amd64/wa-server-windows-amd64.exe
+            dist/android-aar/waengine.aar
+          body: |
+            ## WA Engine ${{ steps.version.outputs.VERSION }}
+
+            ### Desktop / server (standalone binaries)
+            Download the binary for your platform and run it. The PWA connects to `http://localhost:8080`.
+
+            | Platform | File |
+            |---|---|
+            | Linux x64 | `wa-server-linux-amd64` |
+            | Linux arm64 (Raspberry Pi, etc.) | `wa-server-linux-arm64` |
+            | macOS Intel | `wa-server-mac-amd64` |
+            | macOS Apple Silicon (M1/M2/M3) | `wa-server-mac-arm64` |
+            | Windows x64 | `wa-server-windows-amd64.exe` |
+
+            **Quick start (Mac/Linux):**
+            ```bash
+            chmod +x wa-server-*
+            ./wa-server-mac-arm64 --port 8080 --data ~/wa-data
+            ```
+
+            **Quick start (Windows):**
+            ```powershell
+            .\wa-server-windows-amd64.exe --port 8080 --data C:\wa-data
+            ```
+
+            ### Android
+            `waengine.aar` — embed in your Android app and start `WaEngineService`.
+            The service runs the HTTP server on `localhost:8080`; your PWA connects to it.
+
+            #### Add to your Android app
+            1. Copy `waengine.aar` → `app/libs/waengine.aar`
+            2. In `app/build.gradle`:
+               ```groovy
+               dependencies {
+                   implementation files('libs/waengine.aar')
+               }
+               ```
+            3. Copy `WaEngineService.kt` into your app package
+            4. Register in `AndroidManifest.xml` (see `WaEngineService.kt` header)
+            5. Start it: `ContextCompat.startForegroundService(this, Intent(this, WaEngineService::class.java))`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
