@@ -3,12 +3,11 @@ name: Build and release all platforms
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 # One job per platform — run in parallel.
 # All artifacts collected by the final release job.
 jobs:
-
   # ── Linux amd64 ──────────────────────────────────────────────────────────────
   build-linux-amd64:
     runs-on: ubuntu-latest
@@ -16,8 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'   # bumped from 1.24
-      - name: Install gcc (CGO for SQLite)
+          go-version: "1.25"
+      - name: Install gcc
         run: sudo apt-get install -y gcc
       - name: Build
         run: |
@@ -35,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: "1.25"
       - name: Install arm64 cross-compiler
         run: sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Build
@@ -51,12 +50,12 @@ jobs:
   # ── macOS Intel ──────────────────────────────────────────────────────────────
   build-mac-amd64:
     runs-on: macos-13
-    timeout-minutes: 20          # prevents hanging forever
+    timeout-minutes: 20 # prevents hanging forever
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: "1.25"
       - name: Build
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
@@ -69,12 +68,12 @@ jobs:
   # ── macOS Apple Silicon ───────────────────────────────────────────────────────
   build-mac-arm64:
     runs-on: macos-14
-    timeout-minutes: 20          # prevents hanging forever
+    timeout-minutes: 20 # prevents hanging forever
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: "1.25"
       - name: Build
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
@@ -91,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: "1.25"
       - name: Build
         run: |
           $env:CGO_ENABLED = "1"
@@ -101,12 +100,7 @@ jobs:
           name: windows-amd64
           path: wa-server-windows-amd64.exe
 
-  # ── Android AAR (via Docker + gomobile) ──────────────────────────────────────
-  #
-  # KEY FIXES vs previous version:
-  #   1. Go 1.25 base image (gomobile now requires >= 1.25)
-  #   2. Pinned gomobile version — no more @latest breakage
-  #   3. docker run with --name so we can docker cp reliably
+  # ── Android AAR ──────────────────────────────────────────────────────────────
   build-android:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -114,8 +108,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
+        # --progress=plain shows every line of output including the real gomobile error
+        # --no-cache ensures a clean build (remove after debugging if you want caching)
         run: |
           docker build \
+            --progress=plain \
             --platform=linux/amd64 \
             -f bindings/android/Dockerfile \
             -t wa-engine-builder \
