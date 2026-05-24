@@ -47,43 +47,33 @@ jobs:
           name: linux-arm64
           path: wa-server-linux-arm64
 
-  # ── macOS Intel ──────────────────────────────────────────────────────────────
-  build-mac-amd64:
-    runs-on: macos-13
-    timeout-minutes: 20 # prevents hanging forever
+  # Single job builds BOTH mac binaries on the ARM runner via cross-compilation.
+  # Eliminates the flaky macos-13 Intel runner which has very limited availability.
+  build-mac:
+    runs-on: macos-14
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - name: Build
+      - name: Build mac-arm64
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+            go build -ldflags="-s -w" -o wa-server-mac-arm64 ./cmd/server
+      - name: Build mac-amd64 (cross-compiled from ARM)
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
             go build -ldflags="-s -w" -o wa-server-mac-amd64 ./cmd/server
       - uses: actions/upload-artifact@v4
         with:
+          name: mac-arm64
+          path: wa-server-mac-arm64
+      - uses: actions/upload-artifact@v4
+        with:
           name: mac-amd64
           path: wa-server-mac-amd64
 
-  # ── macOS Apple Silicon ───────────────────────────────────────────────────────
-  build-mac-arm64:
-    runs-on: macos-14
-    timeout-minutes: 20 # prevents hanging forever
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-      - name: Build
-        run: |
-          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-            go build -ldflags="-s -w" -o wa-server-mac-arm64 ./cmd/server
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-arm64
-          path: wa-server-mac-arm64
-
-  # ── Windows amd64 ────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
@@ -136,8 +126,7 @@ jobs:
     needs:
       - build-linux-amd64
       - build-linux-arm64
-      - build-mac-amd64
-      - build-mac-arm64
+      - build-mac
       - build-windows
       - build-android
     runs-on: ubuntu-latest
@@ -161,8 +150,8 @@ jobs:
           files: |
             dist/linux-amd64/wa-server-linux-amd64
             dist/linux-arm64/wa-server-linux-arm64
-            dist/mac-amd64/wa-server-mac-amd64
             dist/mac-arm64/wa-server-mac-arm64
+            dist/mac-amd64/wa-server-mac-amd64
             dist/windows-amd64/wa-server-windows-amd64.exe
             dist/android-aar/waengine.aar
           body: |
@@ -176,7 +165,6 @@ jobs:
             | Linux x64 | `wa-server-linux-amd64` |
             | Linux arm64 (Raspberry Pi, etc.) | `wa-server-linux-arm64` |
             | macOS Intel | `wa-server-mac-amd64` |
-            | macOS Apple Silicon (M1/M2/M3) | `wa-server-mac-arm64` |
             | Windows x64 | `wa-server-windows-amd64.exe` |
 
             **Quick start (Mac/Linux):**
