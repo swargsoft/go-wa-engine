@@ -1,13 +1,4 @@
 # bindings/android/Dockerfile
-#
-# Builds waengine.aar for Android.
-# Go 1.25 is required because gomobile@latest now requires >= 1.25.
-#
-# Build:
-#   docker build -f bindings/android/Dockerfile -t wa-engine-builder .
-#   docker run --name temp-builder wa-engine-builder
-#   docker cp temp-builder:/workspace/bindings/android/build/waengine.aar ./bindings/android/build/waengine.aar
-#   docker rm temp-builder
 
 FROM --platform=linux/amd64 golang:1.25-bookworm
 
@@ -36,7 +27,6 @@ RUN yes | sdkmanager --licenses > /dev/null && \
     sdkmanager "platform-tools" "ndk;25.2.9519653" "platforms;android-34"
 
 # ── gomobile ──────────────────────────────────────────────────────────────────
-# @latest works now because we are on Go 1.25
 ENV GOPATH=/go
 ENV PATH="${GOPATH}/bin:${PATH}"
 
@@ -47,7 +37,10 @@ RUN go install golang.org/x/mobile/cmd/gomobile@latest && \
 WORKDIR /workspace
 COPY . .
 
-RUN go mod download
+# Go 1.25 requires golang.org/x/mobile declared as a tool in go.mod.
+# This adds it if not already present, then tidies.
+RUN go get -tool golang.org/x/mobile/cmd/gobind && \
+    go mod tidy
 
 RUN mkdir -p bindings/android/build && \
     gomobile bind \
