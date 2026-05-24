@@ -3,7 +3,7 @@
 //
 // ANTI-BAN STRATEGY:
 // WhatsApp monitors message frequency, timing patterns, and burst behavior.
-// A real human types and sends messages with natural variance — never at
+// A real human types and sends messages with natural variance - never at
 // machine-perfect intervals. We simulate this with:
 //
 //  1. Token bucket: limits sustained throughput (default: ~20 msg/min burst,
@@ -63,7 +63,7 @@ func DefaultRateLimiterConfig() RateLimiterConfig {
 	}
 }
 
-// AggressiveRateLimiterConfig is for high-volume use — still safer than no limits,
+// AggressiveRateLimiterConfig is for high-volume use - still safer than no limits,
 // but more likely to attract scrutiny on fresh or unverified accounts.
 func AggressiveRateLimiterConfig() RateLimiterConfig {
 	return RateLimiterConfig{
@@ -164,7 +164,7 @@ func (r *RateLimiter) WaitContext(ctx context.Context) {
 
 // SimulateTypingDelay returns the duration a typing indicator should show
 // before sending a message of the given text length.
-// This makes message timing look human — longer texts take longer to type.
+// This makes message timing look human - longer texts take longer to type.
 func (r *RateLimiter) SimulateTypingDelay(textLen int) time.Duration {
 	if textLen <= 0 {
 		return 0

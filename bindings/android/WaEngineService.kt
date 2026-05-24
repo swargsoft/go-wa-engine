@@ -87,7 +87,7 @@ class WaEngineService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "WA Engine",
-                NotificationManager.IMPORTANCE_LOW   // silent — no sound or vibration
+                NotificationManager.IMPORTANCE_LOW   // silent - no sound or vibration
             ).apply {
                 description = "WhatsApp engine running in background"
                 setShowBadge(false)

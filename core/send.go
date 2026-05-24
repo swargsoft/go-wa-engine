@@ -378,17 +378,17 @@ func (s *Sender) SendContact(jidStr string, displayName string, vcard string) (s
 	return resp.ID, nil
 }
 
-// SendVideo — stub, pending implementation.
+// SendVideo - stub, pending implementation.
 func (s *Sender) SendVideo(jidStr string, data []byte, caption string, mimeType string) (string, error) {
 	return "", NewError(ErrCodeInternal, "Video sending not yet implemented")
 }
 
-// SendAudio — stub, pending implementation.
+// SendAudio - stub, pending implementation.
 func (s *Sender) SendAudio(jidStr string, data []byte, mimeType string, ptt bool) (string, error) {
 	return "", NewError(ErrCodeInternal, "Audio sending not yet implemented")
 }
 
-// SendSticker — stub, pending implementation.
+// SendSticker - stub, pending implementation.
 func (s *Sender) SendSticker(jidStr string, data []byte) (string, error) {
 	return "", NewError(ErrCodeInternal, "Sticker sending not yet implemented")
 }

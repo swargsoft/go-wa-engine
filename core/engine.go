@@ -223,7 +223,7 @@ func (e *Engine) SetPresenceConfig(cfg PresenceConfig) {
 	e.sender.SetPresenceManager(p)
 }
 
-// MarkActive signals app is actively in use — keeps presence "online".
+// MarkActive signals app is actively in use - keeps presence "online".
 // Call from your polling loop / foreground activity.
 func (e *Engine) MarkActive() {
 	if e.presence != nil {

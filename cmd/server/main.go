@@ -1,4 +1,4 @@
-// cmd/server/main.go — platform-independent HTTP server for wa-engine
+// cmd/server/main.go - platform-independent HTTP server for wa-engine
 //
 // BUILD FOR MAC (testing):
 //   go build -o wa-server ./cmd/server && ./wa-server --port 8080 --data ./wa-data
@@ -78,7 +78,7 @@ func main() {
 		Addr:        addr,
 		Handler:     authMiddleware(corsMiddleware(mux)),
 		ReadTimeout: 30 * time.Second,
-		// No WriteTimeout — SSE streams need unlimited time
+		// No WriteTimeout - SSE streams need unlimited time
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -249,7 +249,7 @@ func (s *server) handleRemoveSession(w http.ResponseWriter, r *http.Request, nam
 }
 
 func (s *server) handleSessionStatus(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.GetSessionInfoJSON(sessionName string) string — returns "" if not found
+	// sm.GetSessionInfoJSON(sessionName string) string - returns "" if not found
 	info := s.sm.GetSessionInfoJSON(name)
 	if info == "" {
 		jsonError(w, http.StatusNotFound, "not_found",

@@ -1,4 +1,4 @@
-// waengine_server.go — gomobile entry point for mobile platforms.
+// waengine_server.go - gomobile entry point for mobile platforms.
 //
 // This file exposes a minimal API for embedding the wa-engine HTTP server
 // inside a mobile app (Android foreground service, iOS background task).
@@ -12,7 +12,7 @@
 //	Waengine.stopHTTPServer()                 // call from Service.onDestroy
 //
 // GOMOBILE COMPATIBILITY:
-// Only primitive types (string, int, bool) are used — no structs or interfaces.
+// Only primitive types (string, int, bool) are used - no structs or interfaces.
 package waengine
 
 import (
@@ -28,7 +28,7 @@ import (
 )
 
 // httpServerState holds the running server instance.
-// Only one HTTP server per process — mobile apps are single-session hosts.
+// Only one HTTP server per process - mobile apps are single-session hosts.
 var httpServerState struct {
 	sync.Mutex
 	srv *http.Server
@@ -39,14 +39,14 @@ var httpServerState struct {
 // dataDir is the path to a writable directory for SQLite session storage.
 //
 // On Android pass context.getFilesDir().getAbsolutePath() + "/wa-engine".
-// This is BLOCKING — call it from a goroutine in your Android Service.
+// This is BLOCKING - call it from a goroutine in your Android Service.
 //
 // Returns an error string, empty string on success.
 func StartHTTPServer(port int, dataDir string) string {
 	httpServerState.Lock()
 	if httpServerState.srv != nil {
 		httpServerState.Unlock()
-		return "" // already running — idempotent
+		return "" // already running - idempotent
 	}
 
 	sm, err := core.NewSessionManager(dataDir)

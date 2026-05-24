@@ -1,12 +1,12 @@
 # wa-engine Makefile
 # Usage:
-#   make mac          — build server binary for macOS (current arch)
-#   make linux        — cross-compile for linux/amd64
-#   make windows      — cross-compile for windows/amd64
-#   make android      — build Android AAR via Docker
-#   make run          — build + run locally on port 8080
-#   make test-send    — quick smoke test (requires running server + jq)
-#   make clean        — remove build artifacts
+#   make mac          - build server binary for macOS (current arch)
+#   make linux        - cross-compile for linux/amd64
+#   make windows      - cross-compile for windows/amd64
+#   make android      - build Android AAR via Docker
+#   make run          - build + run locally on port 8080
+#   make test-send    - quick smoke test (requires running server + jq)
+#   make clean        - remove build artifacts
 
 MODULE     := github.com/mml/wa-engine
 SERVER_PKG := ./cmd/server

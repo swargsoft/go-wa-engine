@@ -78,7 +78,7 @@ func NewClient(storage *Storage, eventQueue *EventQueue, log waLog.Logger) (*Cli
 	// Anti-ban: allow some auto-reconnect but not unlimited hammering.
 	// We layer our own backoff on top via the Disconnected event.
 	waClient.EnableAutoReconnect = true
-	waClient.AutoReconnectErrors = 3 // reduced from 5 — fail faster, back off ourselves
+	waClient.AutoReconnectErrors = 3 // reduced from 5 - fail faster, back off ourselves
 
 	return &Client{
 		client:     waClient,
@@ -344,7 +344,7 @@ func (c *Client) handleEvent(evt interface{}) {
 		c.log.Infof("Keep-alive restored")
 		atomic.StoreInt32(&c.state, int32(StateConnected))
 		c.eventQueue.Push(NewConnectionOpenEvent())
-		// Anti-ban: reset backoff — we're healthy again
+		// Anti-ban: reset backoff - we're healthy again
 		c.mu.RLock()
 		b := c.backoff
 		c.mu.RUnlock()

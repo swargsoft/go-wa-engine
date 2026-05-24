@@ -5,7 +5,7 @@ on:
     tags:
       - "v*.*.*"
 
-# One job per platform — run in parallel.
+# One job per platform - run in parallel.
 # All artifacts collected by the final release job.
 jobs:
   # ── Linux amd64 ──────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ jobs:
             ```
 
             ### Android
-            `waengine.aar` — embed in your Android app and start `WaEngineService`.
+            `waengine.aar` - embed in your Android app and start `WaEngineService`.
             The service runs the HTTP server on `localhost:8080`; your PWA connects to it.
 
             #### Add to your Android app

@@ -1,4 +1,4 @@
-// Package core — session manager extensions for anti-ban support.
+// Package core - session manager extensions for anti-ban support.
 // Add these methods to session.go, or keep as a separate file.
 // They expose the Engine.MarkActive() call through the SessionManager API.
 package core

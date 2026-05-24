@@ -3,7 +3,7 @@
 //
 // WHY BACKOFF MATTERS:
 // When WhatsApp disconnects an engine that immediately retries in a tight loop,
-// their servers see a flood of connection attempts — a strong bot signal that
+// their servers see a flood of connection attempts - a strong bot signal that
 // can escalate from a soft block to a permanent ban.
 //
 // STRATEGY:
@@ -46,7 +46,7 @@ func DefaultBackoffConfig() BackoffConfig {
 		Multiplier:   2.0,
 		MaxDelay:     5 * time.Minute,
 		JitterFactor: 0.20,
-		MaxAttempts:  0, // unlimited — let whatsmeow handle final give-up
+		MaxAttempts:  0, // unlimited - let whatsmeow handle final give-up
 	}
 }
 

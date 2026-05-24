@@ -1,5 +1,5 @@
 // Package core provides the WhatsApp engine implementation.
-// This file manages WhatsApp presence — online/offline/typing state.
+// This file manages WhatsApp presence - online/offline/typing state.
 //
 // WHY PRESENCE MATTERS FOR ANTI-BAN:
 // A real browser user goes "online" when the tab is open, shows "typing..."
@@ -106,7 +106,7 @@ func (p *PresenceManager) OnDisconnect() {
 
 // BeforeSend should be called before sending a message to a JID.
 // Sends a "composing" (typing) indicator and waits the typing delay.
-// Returns a cancel function — call it or AfterSend() when done.
+// Returns a cancel function - call it or AfterSend() when done.
 func (p *PresenceManager) BeforeSend(jidStr string, textLen int) func() {
 	p.resetIdleTimer() // activity happened
 
