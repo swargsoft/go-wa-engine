@@ -5,8 +5,8 @@ on:
     tags:
       - 'v*.*.*'
 
-# One job per platform so they run in parallel.
-# All artifacts are collected by the final release job.
+# One job per platform — run in parallel.
+# All artifacts collected by the final release job.
 jobs:
 
   # ── Linux amd64 ──────────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'   # bumped from 1.24
       - name: Install gcc (CGO for SQLite)
         run: sudo apt-get install -y gcc
       - name: Build
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
       - name: Install arm64 cross-compiler
         run: sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Build
@@ -50,12 +50,13 @@ jobs:
 
   # ── macOS Intel ──────────────────────────────────────────────────────────────
   build-mac-amd64:
-    runs-on: macos-13       # Intel runner
+    runs-on: macos-13
+    timeout-minutes: 20          # prevents hanging forever
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
       - name: Build
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
@@ -67,12 +68,13 @@ jobs:
 
   # ── macOS Apple Silicon ───────────────────────────────────────────────────────
   build-mac-arm64:
-    runs-on: macos-14       # Apple Silicon (M1/M2) runner
+    runs-on: macos-14
+    timeout-minutes: 20          # prevents hanging forever
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
       - name: Build
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
@@ -89,7 +91,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
       - name: Build
         run: |
           $env:CGO_ENABLED = "1"
@@ -100,22 +102,33 @@ jobs:
           path: wa-server-windows-amd64.exe
 
   # ── Android AAR (via Docker + gomobile) ──────────────────────────────────────
+  #
+  # KEY FIXES vs previous version:
+  #   1. Go 1.25 base image (gomobile now requires >= 1.25)
+  #   2. Pinned gomobile version — no more @latest breakage
+  #   3. docker run with --name so we can docker cp reliably
   build-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build AAR in Docker
+
+      - name: Build Docker image
         run: |
-          mkdir -p bindings/android/build
           docker build \
             --platform=linux/amd64 \
             -f bindings/android/Dockerfile \
-            -t wa-engine-builder .
-          docker run --name tmp-builder wa-engine-builder
+            -t wa-engine-builder \
+            .
+
+      - name: Extract AAR from container
+        run: |
+          mkdir -p bindings/android/build
+          docker create --name tmp-builder wa-engine-builder
           docker cp tmp-builder:/workspace/bindings/android/build/waengine.aar \
             ./bindings/android/build/waengine.aar
           docker rm tmp-builder
+
       - uses: actions/upload-artifact@v4
         with:
           name: android-aar
@@ -193,7 +206,7 @@ jobs:
                }
                ```
             3. Copy `WaEngineService.kt` into your app package
-            4. Register in `AndroidManifest.xml` (see `WaEngineService.kt` header)
+            4. Register in `AndroidManifest.xml`
             5. Start it: `ContextCompat.startForegroundService(this, Intent(this, WaEngineService::class.java))`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
