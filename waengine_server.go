@@ -148,6 +148,8 @@ func (s *mobileServer) routeSession(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(s.sm.GetSessionInfoJSON(name)))
 	case action == "pair" && r.Method == http.MethodPost:
 		jsonResp(w, 200, mapOf("status", runErr(s.sm.StartPairing(name))))
+	case action == "pair-code" && r.Method == http.MethodPost:
+		s.handleMobilePhonePair(w, r, name)
 	case action == "start" && r.Method == http.MethodPost:
 		jsonResp(w, 200, mapOf("status", runErr(s.sm.Start(name))))
 	case action == "stop" && r.Method == http.MethodPost:
@@ -157,6 +159,8 @@ func (s *mobileServer) routeSession(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(s.sm.GetSessionInfoJSON(name)))
 	case action == "qr" && r.Method == http.MethodGet:
 		jsonResp(w, 200, map[string]string{"session": name, "qr": s.sm.GetQR(name)})
+	case action == "pairing-code" && r.Method == http.MethodGet:
+		jsonResp(w, 200, map[string]string{"session": name, "pairing_code": s.sm.GetPairingCode(name)})
 	case action == "events" && r.Method == http.MethodGet:
 		event := s.sm.PollEvent(name)
 		w.Header().Set("Content-Type", "application/json")
@@ -221,6 +225,22 @@ func (s *mobileServer) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"sessions":%s}`, s.sm.GetAllSessionsInfo())
+}
+
+func (s *mobileServer) handleMobilePhonePair(w http.ResponseWriter, r *http.Request, name string) {
+	var req struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Phone == "" {
+		jsonResp(w, 400, mapOf("error", "phone required"))
+		return
+	}
+	code, err := s.sm.StartPhonePairing(name, req.Phone)
+	if err != nil {
+		jsonResp(w, 400, mapOf("error", err.Error()))
+		return
+	}
+	jsonResp(w, 200, map[string]string{"pairing_code": code, "status": "pairing_started"})
 }
 
 func (s *mobileServer) handleSSE(w http.ResponseWriter, r *http.Request, name string) {

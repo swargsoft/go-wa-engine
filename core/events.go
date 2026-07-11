@@ -37,6 +37,9 @@ const (
 	// EventPairingFailed is emitted when device pairing fails.
 	EventPairingFailed EventType = "pairing.failed"
 
+	// EventPairingCode is emitted when a phone pairing code is generated.
+	EventPairingCode EventType = "pairing.code"
+
 	// ----- Connection Events -----
 
 	// EventConnectionOpen is emitted when connected to WhatsApp.
@@ -142,6 +145,12 @@ type PairingData struct {
 	PushName string `json:"push_name,omitempty"`
 	Platform string `json:"platform,omitempty"`
 	Reason   string `json:"reason,omitempty"` // For failures
+}
+
+// PairingCodeData contains phone pairing code information.
+type PairingCodeData struct {
+	Code  string `json:"code"`
+	Phone string `json:"phone"`
 }
 
 // DroppedEventData contains information about dropped events.
@@ -388,6 +397,14 @@ func NewPairingSuccessEvent(jid, pushName, platform string) *Event {
 		JID:      jid,
 		PushName: pushName,
 		Platform: platform,
+	})
+}
+
+// NewPairingCodeEvent creates a pairing code event.
+func NewPairingCodeEvent(code, phone string) *Event {
+	return NewEvent(EventPairingCode, &PairingCodeData{
+		Code:  code,
+		Phone: phone,
 	})
 }
 

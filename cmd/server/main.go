@@ -7,19 +7,21 @@
 //   GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o wa-server-linux ./cmd/server
 //
 // API:
-//   POST   /api/sessions/:name/pair        Start QR pairing
-//   POST   /api/sessions/:name/start       Connect existing session
-//   POST   /api/sessions/:name/stop        Disconnect
-//   DELETE /api/sessions/:name             Remove permanently
-//   GET    /api/sessions/:name/status      Status JSON
-//   GET    /api/sessions/:name/qr          Current QR string
-//   GET    /api/sessions/:name/events      Poll next event (non-blocking)
-//   GET    /api/sessions/:name/stream      SSE stream of events
-//   POST   /api/sessions/:name/send/text   Send text message
-//   POST   /api/sessions/:name/send/image  Send image with caption
-//   POST   /api/sessions/:name/active      Mark session active (anti-ban)
-//   GET    /api/sessions                   List all sessions
-//   GET    /api/health                     Health check
+//   POST   /api/sessions/:name/pair           Start QR pairing
+//   POST   /api/sessions/:name/pair-code      Start phone pairing (code-based)
+//   POST   /api/sessions/:name/start          Connect existing session
+//   POST   /api/sessions/:name/stop           Disconnect
+//   DELETE /api/sessions/:name                Remove permanently
+//   GET    /api/sessions/:name/status         Status JSON
+//   GET    /api/sessions/:name/qr             Current QR string
+//   GET    /api/sessions/:name/pairing-code   Current pairing code string
+//   GET    /api/sessions/:name/events         Poll next event (non-blocking)
+//   GET    /api/sessions/:name/stream         SSE stream of events
+//   POST   /api/sessions/:name/send/text      Send text message
+//   POST   /api/sessions/:name/send/image     Send image with caption
+//   POST   /api/sessions/:name/active         Mark session active (anti-ban)
+//   GET    /api/sessions                      List all sessions
+//   GET    /api/health                        Health check
 package main
 
 import (
@@ -164,6 +166,8 @@ func (s *server) routeSession(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionStatus(w, r, name)
 	case action == "pair" && r.Method == http.MethodPost:
 		s.handlePair(w, r, name)
+	case action == "pair-code" && r.Method == http.MethodPost:
+		s.handlePhonePair(w, r, name)
 	case action == "start" && r.Method == http.MethodPost:
 		s.handleStart(w, r, name)
 	case action == "stop" && r.Method == http.MethodPost:
@@ -172,6 +176,8 @@ func (s *server) routeSession(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionStatus(w, r, name)
 	case action == "qr" && r.Method == http.MethodGet:
 		s.handleGetQR(w, r, name)
+	case action == "pairing-code" && r.Method == http.MethodGet:
+		s.handleGetPairingCode(w, r, name)
 	case action == "events" && r.Method == http.MethodGet:
 		s.handlePollEvent(w, r, name)
 	case action == "stream" && r.Method == http.MethodGet:
@@ -264,6 +270,38 @@ func (s *server) handleGetQR(w http.ResponseWriter, r *http.Request, name string
 	// sm.GetQR(sessionName string) string
 	qr := s.sm.GetQR(name)
 	jsonOK(w, map[string]string{"session": name, "qr": qr})
+}
+
+func (s *server) handleGetPairingCode(w http.ResponseWriter, r *http.Request, name string) {
+	code := s.sm.GetPairingCode(name)
+	jsonOK(w, map[string]string{"session": name, "pairing_code": code})
+}
+
+type phonePairRequest struct {
+	Phone string `json:"phone"`
+}
+
+func (s *server) handlePhonePair(w http.ResponseWriter, r *http.Request, name string) {
+	var req phonePairRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if req.Phone == "" {
+		jsonError(w, http.StatusBadRequest, "missing_fields", "'phone' is required")
+		return
+	}
+	code, err := s.sm.StartPhonePairing(name, req.Phone)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "pair_error", err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{
+		"status":       "pairing_started",
+		"session":      name,
+		"pairing_code": code,
+		"message":      "Enter this code in WhatsApp → Linked Devices → Link a Device",
+	})
 }
 
 func (s *server) handlePollEvent(w http.ResponseWriter, r *http.Request, name string) {

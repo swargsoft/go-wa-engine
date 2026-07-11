@@ -335,6 +335,34 @@ func (sm *SessionManager) IsConnected(sessionName string) bool {
 	return engine.IsConnected()
 }
 
+// StartPhonePairing initiates code-based phone pairing for a session.
+// Creates the session if it doesn't exist.
+// phone: full international phone number (with country code, no + prefix).
+// Returns the 8-character pairing code (XXXX-XXXX format).
+//
+// Flow:
+// 1. Call StartPhonePairing(sessionName, phone)
+// 2. Poll PollEvent(sessionName) for pairing.code events
+// 3. Show the pairing code to user
+// 4. Wait for pairing.success or pairing.failed event
+func (sm *SessionManager) StartPhonePairing(sessionName, phone string) (string, error) {
+	engine, err := sm.getOrCreateSession(sessionName)
+	if err != nil {
+		return "", err
+	}
+	return engine.StartPhonePairing(phone)
+}
+
+// GetPairingCode returns the current pairing code for a session.
+// Returns empty string if no pairing code available.
+func (sm *SessionManager) GetPairingCode(sessionName string) string {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return ""
+	}
+	return engine.GetPairingCode()
+}
+
 // GetQR returns the current QR code for a session.
 // Returns empty string if no QR available.
 func (sm *SessionManager) GetQR(sessionName string) string {

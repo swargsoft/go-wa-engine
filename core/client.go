@@ -9,11 +9,14 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -53,13 +56,14 @@ type Client struct {
 	client       *whatsmeow.Client
 	storage      *Storage
 	eventQueue   *EventQueue
-	state        int32  // atomic ClientState
-	currentQR    string
-	qrCtx        context.Context
-	qrCancel     context.CancelFunc
-	log          waLog.Logger
-	pairingActive int32 // atomic bool
-	disconnectMu  sync.Mutex
+	state             int32  // atomic ClientState
+	currentQR         string
+	currentPairingCode string
+	qrCtx             context.Context
+	qrCancel          context.CancelFunc
+	log               waLog.Logger
+	pairingActive     int32 // atomic bool
+	disconnectMu      sync.Mutex
 
 	// Anti-ban hooks (set after construction)
 	presence *PresenceManager // may be nil
@@ -167,6 +171,112 @@ func (c *Client) StartPairing() error {
 	return nil
 }
 
+// StartPhonePairing initiates code-based phone pairing.
+// The user enters the returned code in WhatsApp → Linked Devices → Link a Device.
+func (c *Client) StartPhonePairing(phone string) (string, error) {
+	current := ClientState(atomic.LoadInt32(&c.state))
+	if current == StatePairing {
+		return "", NewError(ErrCodeAlreadyRunning, "Already pairing")
+	}
+	if current == StateConnected {
+		return "", NewError(ErrCodeAlreadyRunning, "Already connected, cannot start pairing")
+	}
+	if c.storage.IsPaired() {
+		return "", NewError(ErrCodeAlreadyRunning, "Already paired, use Connect() instead")
+	}
+
+	atomic.StoreInt32(&c.state, int32(StatePairing))
+	atomic.StoreInt32(&c.pairingActive, 1)
+
+	c.client.AddEventHandler(c.handleEvent)
+
+	if err := c.client.Connect(); err != nil {
+		atomic.StoreInt32(&c.state, int32(StateDisconnected))
+		atomic.StoreInt32(&c.pairingActive, 0)
+		return "", WrapError(ErrCodeConnectionFailed, "Failed to connect for pairing", err)
+	}
+
+	// Wait for websocket to be ready (do NOT use GetQRChannel — it calls Disconnect
+	// when its context is cancelled, which would kill the connection before the
+	// phone pairing handshake completes).
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if c.client.IsConnected() {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !c.client.IsConnected() {
+		atomic.StoreInt32(&c.state, int32(StateDisconnected))
+		atomic.StoreInt32(&c.pairingActive, 0)
+		return "", NewError(ErrCodeConnectionTimeout, "Timed out waiting for connection")
+	}
+
+	clientType, displayName := getPairClientInfo()
+	code, err := c.client.PairPhone(context.Background(), phone, false, clientType, displayName)
+	if err != nil {
+		atomic.StoreInt32(&c.state, int32(StateDisconnected))
+		atomic.StoreInt32(&c.pairingActive, 0)
+		return "", WrapError(ErrCodePairingFailed, "Failed to generate pairing code", err)
+	}
+
+	c.mu.Lock()
+	c.currentPairingCode = code
+	c.mu.Unlock()
+
+	c.eventQueue.Push(NewPairingCodeEvent(code, phone))
+	c.log.Infof("Phone pairing code generated for %s: %s", phone, code)
+	return code, nil
+}
+
+// getPairClientInfo derives the PairClientType and display name from the
+// globally configured DeviceProps (set by deviceprops.go init).
+func getPairClientInfo() (whatsmeow.PairClientType, string) {
+	os := "Unknown"
+	pt := waCompanionReg.DeviceProps_CHROME
+
+	dp := store.DeviceProps
+	if dp != nil {
+		if dp.Os != nil {
+			os = *dp.Os
+		}
+		if dp.PlatformType != nil {
+			pt = *dp.PlatformType
+		}
+	}
+	return mapPlatformTypeToPairClient(pt), buildClientDisplayName(os, pt)
+}
+
+func mapPlatformTypeToPairClient(pt waCompanionReg.DeviceProps_PlatformType) whatsmeow.PairClientType {
+	switch pt {
+	case waCompanionReg.DeviceProps_CHROME:
+		return whatsmeow.PairClientChrome
+	case waCompanionReg.DeviceProps_FIREFOX:
+		return whatsmeow.PairClientFirefox
+	case waCompanionReg.DeviceProps_SAFARI:
+		return whatsmeow.PairClientSafari
+	default:
+		return whatsmeow.PairClientChrome
+	}
+}
+
+func platformTypeLabel(pt waCompanionReg.DeviceProps_PlatformType) string {
+	switch pt {
+	case waCompanionReg.DeviceProps_CHROME:
+		return "Chrome"
+	case waCompanionReg.DeviceProps_FIREFOX:
+		return "Firefox"
+	case waCompanionReg.DeviceProps_SAFARI:
+		return "Safari"
+	default:
+		return "Chrome"
+	}
+}
+
+func buildClientDisplayName(os string, pt waCompanionReg.DeviceProps_PlatformType) string {
+	return fmt.Sprintf("%s (%s)", platformTypeLabel(pt), os)
+}
+
 func (c *Client) handleQRChannel(qrChan <-chan whatsmeow.QRChannelItem) {
 	defer func() {
 		atomic.StoreInt32(&c.pairingActive, 0)
@@ -191,6 +301,7 @@ func (c *Client) handleQRChannel(qrChan <-chan whatsmeow.QRChannelItem) {
 		case "timeout":
 			c.mu.Lock()
 			c.currentQR = ""
+			c.currentPairingCode = ""
 			c.mu.Unlock()
 			c.eventQueue.Push(NewQRExpiredEvent())
 			c.eventQueue.Push(NewPairingFailedEvent("QR code expired"))
@@ -199,6 +310,7 @@ func (c *Client) handleQRChannel(qrChan <-chan whatsmeow.QRChannelItem) {
 		case "error":
 			c.mu.Lock()
 			c.currentQR = ""
+			c.currentPairingCode = ""
 			c.mu.Unlock()
 			c.eventQueue.Push(NewPairingFailedEvent("QR authentication error"))
 			atomic.StoreInt32(&c.state, int32(StateDisconnected))
@@ -230,6 +342,7 @@ func (c *Client) Disconnect() {
 		c.qrCancel = nil
 	}
 	c.currentQR = ""
+	c.currentPairingCode = ""
 	c.mu.Unlock()
 
 	if c.client != nil {
@@ -319,6 +432,11 @@ func (c *Client) handleEvent(evt interface{}) {
 	case *events.PairSuccess:
 		c.log.Infof("Device pairing successful: %s", v.ID.String())
 		atomic.StoreInt32(&c.state, int32(StateConnected))
+		atomic.StoreInt32(&c.pairingActive, 0)
+		c.mu.Lock()
+		c.currentQR = ""
+		c.currentPairingCode = ""
+		c.mu.Unlock()
 		c.eventQueue.Push(NewPairingSuccessEvent(v.ID.String(), v.BusinessName, v.Platform))
 		c.eventQueue.Push(NewLoggedInEvent(v.ID.String(), v.BusinessName, v.Platform, true))
 
@@ -333,6 +451,10 @@ func (c *Client) handleEvent(evt interface{}) {
 	case *events.PairError:
 		c.log.Errorf("Device pairing failed: %v", v.Error.Error())
 		atomic.StoreInt32(&c.state, int32(StateDisconnected))
+		atomic.StoreInt32(&c.pairingActive, 0)
+		c.mu.Lock()
+		c.currentPairingCode = ""
+		c.mu.Unlock()
 		c.eventQueue.Push(NewPairingFailedEvent(v.Error.Error()))
 
 	case *events.KeepAliveTimeout:
@@ -441,6 +563,12 @@ func (c *Client) GetCurrentQR() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.currentQR
+}
+
+func (c *Client) GetCurrentPairingCode() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.currentPairingCode
 }
 
 func (c *Client) WaitForConnection(timeout time.Duration) error {

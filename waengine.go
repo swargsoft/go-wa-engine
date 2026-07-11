@@ -148,6 +148,58 @@ func StartPairingSession(sessionName string) error {
 	return sm.StartPairing(sessionName)
 }
 
+// StartPhonePairingSession initiates code-based phone pairing for a named session.
+// Creates the session if it doesn't exist.
+// Returns the 8-character pairing code (XXXX-XXXX format) that the user enters
+// in WhatsApp → Linked Devices → Link a Device.
+//
+// phone: full international phone number with country code (no + or 00 prefix).
+//
+// Flow:
+// 1. Call StartPhonePairingSession(sessionName, phone)
+// 2. Poll PollEventSession(sessionName) for pairing.code events
+// 3. Show the returned pairing code to user
+// 4. Wait for pairing.success or pairing.failed event
+// 5. On success, session is persisted automatically
+//
+// Example:
+//
+//	if !waengine.IsPairedSession("work") {
+//	    code, err := waengine.StartPhonePairingSession("work", "1234567890")
+//	    // Show code to user
+//	}
+func StartPhonePairingSession(sessionName, phone string) (string, error) {
+	managerMu.RLock()
+	sm := sessionMgr
+	managerMu.RUnlock()
+
+	if sm == nil {
+		return "", core.ErrNotInitialized
+	}
+	return sm.StartPhonePairing(sessionName, phone)
+}
+
+// GetPairingCodeSession returns the current pairing code for a session.
+func GetPairingCodeSession(sessionName string) string {
+	managerMu.RLock()
+	sm := sessionMgr
+	managerMu.RUnlock()
+
+	if sm == nil {
+		return ""
+	}
+	return sm.GetPairingCode(sessionName)
+}
+	managerMu.RLock()
+	sm := sessionMgr
+	managerMu.RUnlock()
+
+	if sm == nil {
+		return core.ErrNotInitialized
+	}
+	return sm.StartPairing(sessionName)
+}
+
 // StopSession gracefully closes connection for a named session.
 // IDEMPOTENT: Safe to call multiple times.
 // The session can be restarted later with StartSession().
@@ -499,6 +551,18 @@ func Start() error {
 // DEPRECATED: Use StartPairingSession(sessionName) for multi-session.
 func StartPairing() error {
 	return StartPairingSession(DefaultSession)
+}
+
+// StartPhonePairing initiates code-based phone pairing for the default session.
+// DEPRECATED: Use StartPhonePairingSession(sessionName, phone) for multi-session.
+func StartPhonePairing(phone string) (string, error) {
+	return StartPhonePairingSession(DefaultSession, phone)
+}
+
+// GetPairingCode returns the pairing code for the default session.
+// DEPRECATED: Use GetPairingCodeSession(sessionName) for multi-session.
+func GetPairingCode() string {
+	return GetPairingCodeSession(DefaultSession)
 }
 
 // Stop closes the default session connection.

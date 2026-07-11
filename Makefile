@@ -74,6 +74,24 @@ test-send:
 	@sleep 1
 	curl -s http://localhost:8080/api/sessions/test/qr | jq .
 
+# ─── Phone pairing test (requires running server + jq installed) ──────────────
+
+test-phone-pair:
+	@echo "=== Health check ==="
+	curl -s http://localhost:8080/api/health | jq .
+	@echo "\n=== List sessions ==="
+	curl -s http://localhost:8080/api/sessions | jq .
+	@echo "\n=== Start phone pairing (session: test, phone: PHONE_NUMBER) ==="
+	@read -p "Enter phone number (with country code, no +): " phone; \
+	curl -s -X POST http://localhost:8080/api/sessions/test/pair-code \
+	  -H "Content-Type: application/json" \
+	  -d "{\"phone\":\"$$phone\"}" | jq .
+	@echo "\n=== Poll pairing code ==="
+	@sleep 1
+	curl -s http://localhost:8080/api/sessions/test/pairing-code | jq .
+	@echo "\n=== Poll events (waiting for pairing.code) ==="
+	curl -s http://localhost:8080/api/sessions/test/events | jq .
+
 # ─── Maintenance ──────────────────────────────────────────────────────────────
 
 clean:

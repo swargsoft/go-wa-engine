@@ -161,6 +161,30 @@ func (e *Engine) StartPairing() error {
 	return nil
 }
 
+// StartPhonePairing initiates code-based phone pairing.
+// phone: full international phone number (with country code, no + prefix).
+// Returns the 8-character pairing code (XXXX-XXXX format).
+func (e *Engine) StartPhonePairing(phone string) (string, error) {
+	current := EngineState(atomic.LoadInt32(&e.state))
+	if current == EngineStatePairing {
+		return "", NewError(ErrCodeAlreadyRunning, "Already pairing")
+	}
+	if current == EngineStateRunning {
+		return "", NewError(ErrCodeAlreadyRunning, "Engine is already running")
+	}
+	if e.storage.IsPaired() {
+		return "", NewError(ErrCodeAlreadyRunning, "Already paired, use Start() instead")
+	}
+	atomic.StoreInt32(&e.state, int32(EngineStatePairing))
+	code, err := e.client.StartPhonePairing(phone)
+	if err != nil {
+		atomic.StoreInt32(&e.state, int32(EngineStateStopped))
+		return "", err
+	}
+	e.log.Infof("Phone pairing started for %s", phone)
+	return code, nil
+}
+
 // Stop closes the WhatsApp connection gracefully. IDEMPOTENT.
 func (e *Engine) Stop() {
 	current := EngineState(atomic.LoadInt32(&e.state))
@@ -185,6 +209,7 @@ func (e *Engine) IsPaired() bool             { return e.storage.IsPaired() }
 func (e *Engine) IsConnected() bool          { return e.client.IsConnected() }
 func (e *Engine) IsLoggedIn() bool           { return e.client.IsLoggedIn() }
 func (e *Engine) GetQR() string              { return e.client.GetCurrentQR() }
+func (e *Engine) GetPairingCode() string     { return e.client.GetCurrentPairingCode() }
 func (e *Engine) HasSession() bool           { return e.IsPaired() }
 func (e *Engine) GetConnectionState() string { return e.client.GetState().String() }
 func (e *Engine) GetDataDir() string         { return e.dataDir }
