@@ -190,15 +190,6 @@ func GetPairingCodeSession(sessionName string) string {
 	}
 	return sm.GetPairingCode(sessionName)
 }
-	managerMu.RLock()
-	sm := sessionMgr
-	managerMu.RUnlock()
-
-	if sm == nil {
-		return core.ErrNotInitialized
-	}
-	return sm.StartPairing(sessionName)
-}
 
 // StopSession gracefully closes connection for a named session.
 // IDEMPOTENT: Safe to call multiple times.
