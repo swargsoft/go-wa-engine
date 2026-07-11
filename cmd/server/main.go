@@ -46,6 +46,7 @@ var (
 	flagData   = flag.String("data", "./wa-data", "Data directory for session storage")
 	flagHost   = flag.String("host", "127.0.0.1", "Bind address (127.0.0.1 = local only)")
 	flagAPIKey = flag.String("key", "", "Optional API key (empty = no auth)")
+	flagVer    = flag.Bool("version", false, "Print version and exit")
 )
 
 type server struct {
@@ -54,6 +55,11 @@ type server struct {
 
 func main() {
 	flag.Parse()
+
+	if *flagVer {
+		fmt.Printf("wa-engine %s\n", core.Version)
+		os.Exit(0)
+	}
 
 	dataDir, err := filepath.Abs(*flagData)
 	if err != nil {
@@ -203,6 +209,7 @@ func (s *server) routeSession(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]interface{}{
 		"status":   "ok",
+		"version":  core.Version,
 		"sessions": s.sm.GetSessionCount(),
 		"time":     time.Now().UnixMilli(),
 	})

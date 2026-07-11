@@ -11,6 +11,8 @@ MODULE     := github.com/mml/wa-engine
 SERVER_PKG := ./cmd/server
 OUT_DIR    := ./build
 DATA_DIR   := ./wa-data
+VERSION    ?= dev
+LD_FLAGS   := -ldflags="-s -w -X $(MODULE)/core.Version=$(VERSION)"
 
 .PHONY: all mac linux windows run test-send clean
 
@@ -20,14 +22,14 @@ all: mac
 
 mac:
 	@mkdir -p $(OUT_DIR)
-	CGO_ENABLED=1 go build -ldflags="-s -w" -o $(OUT_DIR)/waengine ./cmd/server
+	CGO_ENABLED=1 go build $(LD_FLAGS) -o $(OUT_DIR)/waengine ./cmd/server
 	@echo "✓ Built $(OUT_DIR)/waengine (macOS)"
 
 linux:
 	@mkdir -p $(OUT_DIR)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 \
 	  CC=x86_64-linux-musl-gcc \
-	  go build -ldflags="-s -w" -o $(OUT_DIR)/waengine-linux ./cmd/server
+	  go build $(LD_FLAGS) -o $(OUT_DIR)/waengine-linux ./cmd/server
 	@echo "✓ Built $(OUT_DIR)/waengine-linux"
 
 # Windows cross-compile requires mingw: brew install mingw-w64
@@ -35,7 +37,7 @@ windows:
 	@mkdir -p $(OUT_DIR)
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
 	  CC=x86_64-w64-mingw32-gcc \
-	  go build -ldflags="-s -w" -o $(OUT_DIR)/waengine.exe ./cmd/server
+	  go build $(LD_FLAGS) -o $(OUT_DIR)/waengine.exe ./cmd/server
 	@echo "✓ Built $(OUT_DIR)/waengine.exe"
 
 # ─── Local run ────────────────────────────────────────────────────────────────
@@ -82,6 +84,14 @@ test-phone-pair:
 	curl -s http://localhost:8080/api/sessions/test/events | jq .
 
 # ─── Maintenance ──────────────────────────────────────────────────────────────
+
+# ─── Checksums ─────────────────────────────────────────────────────────────────
+sha256sums:
+	@for f in $(OUT_DIR)/waengine*; do \
+	  [ -f "$$f" ] && sha256sum "$$f" | sed 's|$(OUT_DIR)/||'; \
+	done > $(OUT_DIR)/SHA256SUMS
+	@echo "✓ Generated $(OUT_DIR)/SHA256SUMS"
+	@cat $(OUT_DIR)/SHA256SUMS
 
 clean:
 	rm -rf $(OUT_DIR)
