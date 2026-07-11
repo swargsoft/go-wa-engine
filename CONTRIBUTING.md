@@ -117,10 +117,6 @@ git checkout -b docs/improve-api-reference
 ```bash
 # Run Go tests
 go test ./...
-
-# Build AAR locally with Docker (optional)
-cd bindings/android
-docker build -f Dockerfile -t wa-engine-builder ../..
 ```
 
 ### 5. Commit Your Changes
@@ -150,22 +146,6 @@ git push origin feat/add-message-reactions
 # Then create a Pull Request on GitHub
 ```
 
-## Building the AAR
-
-The AAR is automatically built via GitHub Actions when you push a tag:
-
-```bash
-# Create and push a version tag
-git tag v1.0.1
-git push origin v1.0.1
-```
-
-The GitHub Action will:
-
-1. Build the AAR in Docker
-2. Create a GitHub Release
-3. Attach the AAR file to the release
-
 ## Code Style
 
 ### Go Code
@@ -174,12 +154,6 @@ The GitHub Action will:
 - Follow [Effective Go](https://go.dev/doc/effective_go) guidelines
 - Add comments for exported functions and types
 - Keep functions small and focused
-
-### Kotlin Code (Android bindings)
-
-- Use 2-space indentation
-- Follow Android Kotlin style guide
-- Document public APIs with KDoc
 
 ### TypeScript/JavaScript (React Native bindings)
 

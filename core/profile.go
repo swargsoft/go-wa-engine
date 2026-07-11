@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
 
@@ -13,12 +14,82 @@ type ProfileInfo struct {
 	PushName     string `json:"push_name"`
 	BusinessName string `json:"business_name"`
 	Status       string `json:"status"`
-	Avatar       string `json:"avatar"` // Base64 encoded image or URL
+	Avatar       string `json:"avatar"`
 	IsVerified   bool   `json:"is_verified"`
 	IsBusiness   bool   `json:"is_business"`
+	BusinessAddr string `json:"business_address,omitempty"`
+	BusinessCat  string `json:"business_category,omitempty"`
+	BotName      string `json:"bot_name,omitempty"`
+	IsBot        bool   `json:"is_bot"`
 }
 
-// GetUserProfile fetches profile information for a JID
+func fetchProfilePicture(client *whatsmeow.Client, jid types.JID) string {
+	if client == nil {
+		return ""
+	}
+	params := &whatsmeow.GetProfilePictureParams{Preview: true}
+	pic, _ := client.GetProfilePictureInfo(context.Background(), jid, params)
+	if pic != nil && pic.URL != "" {
+		return pic.URL
+	}
+	params.Preview = false
+	pic, _ = client.GetProfilePictureInfo(context.Background(), jid, params)
+	if pic != nil && pic.URL != "" {
+		return pic.URL
+	}
+	return ""
+}
+
+func fetchBusinessProfile(client *whatsmeow.Client, jid types.JID) *types.BusinessProfile {
+	if client == nil {
+		return nil
+	}
+	bp, err := client.GetBusinessProfile(context.Background(), jid)
+	if err != nil {
+		return nil
+	}
+	return bp
+}
+
+// GetOwnProfile gets the profile of the logged-in user
+func (e *Engine) GetOwnProfile() (string, error) {
+	if !e.IsConnected() {
+		return "", NewError(ErrCodeNotConnected, "Engine not connected")
+	}
+
+	client := e.client.GetClient()
+	if client.Store.ID == nil {
+		return "", NewError(ErrCodeNotInitialized, "User JID not available")
+	}
+
+	jid := client.Store.ID.String()
+	profile := ProfileInfo{
+		JID:      jid,
+		PushName: client.Store.PushName,
+	}
+
+	parsedJID, err := types.ParseJID(jid)
+	if err == nil {
+		profile.Avatar = fetchProfilePicture(client, parsedJID)
+		bp := fetchBusinessProfile(client, parsedJID)
+		if bp != nil {
+			profile.BusinessAddr = bp.Address
+			if len(bp.Categories) > 0 {
+				profile.BusinessCat = bp.Categories[0].Name
+				profile.IsBusiness = true
+			}
+		}
+	}
+
+	result, err := json.Marshal(profile)
+	if err != nil {
+		return "", WrapError(ErrCodeInternal, "Failed to encode profile", err)
+	}
+
+	return string(result), nil
+}
+
+// GetUserProfile fetches profile information for a given JID (other users)
 func (e *Engine) GetUserProfile(jid string) (string, error) {
 	if !e.IsConnected() {
 		return "", NewError(ErrCodeNotConnected, "Engine not connected")
@@ -30,28 +101,25 @@ func (e *Engine) GetUserProfile(jid string) (string, error) {
 	}
 
 	client := e.client.GetClient()
-	
+
 	profile := ProfileInfo{
 		JID: jid,
 	}
 
-	// Get user info from store
-	info, err := client.Store.Contacts.GetContact(context.Background(), parsedJID)
-	if err == nil {
-		profile.PushName = info.PushName
-		profile.BusinessName = info.BusinessName
+	// Check if this is the own profile — use Store.PushName
+	if client.Store.ID != nil && client.Store.ID.String() == jid {
+		profile.PushName = client.Store.PushName
 	}
 
-	// Get profile picture
-	pic, err := client.GetProfilePictureInfo(context.Background(), parsedJID, nil)
-	if err == nil && pic != nil {
-		profile.Avatar = pic.URL
+	profile.Avatar = fetchProfilePicture(client, parsedJID)
+	bp := fetchBusinessProfile(client, parsedJID)
+	if bp != nil {
+		profile.BusinessAddr = bp.Address
+		if len(bp.Categories) > 0 {
+			profile.BusinessCat = bp.Categories[0].Name
+			profile.IsBusiness = true
+		}
 	}
-
-	// Get status/about
-	// Note: WhatsApp doesn't always allow fetching status of other users
-	// This mainly works for your own JID
-	// For other users, you'll need to use GetStatusPrivacy or similar methods
 
 	result, err := json.Marshal(profile)
 	if err != nil {
@@ -59,18 +127,4 @@ func (e *Engine) GetUserProfile(jid string) (string, error) {
 	}
 
 	return string(result), nil
-}
-
-// GetOwnProfile gets the profile of the logged-in user
-func (e *Engine) GetOwnProfile() (string, error) {
-	if !e.IsConnected() {
-		return "", NewError(ErrCodeNotConnected, "Engine not connected")
-	}
-
-	jid := e.client.GetClient().Store.ID
-	if jid == nil {
-		return "", NewError(ErrCodeNotInitialized, "User JID not available")
-	}
-
-	return e.GetUserProfile(jid.String())
 }

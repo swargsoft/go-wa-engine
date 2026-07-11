@@ -619,6 +619,24 @@ func (sm *SessionManager) Destroy() {
 	sm.initialized = false
 }
 
+// GetOwnProfile returns the profile of the logged-in user for a session.
+func (sm *SessionManager) GetOwnProfile(sessionName string) (string, error) {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return "", err
+	}
+	return engine.GetOwnProfile()
+}
+
+// GetUserProfile returns profile info for a given JID using the specified session.
+func (sm *SessionManager) GetUserProfile(sessionName, jid string) (string, error) {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return "", err
+	}
+	return engine.GetUserProfile(jid)
+}
+
 // ----- Helper Methods -----
 
 // errorEventJSON creates a JSON error event for session errors.

@@ -187,7 +187,7 @@ func (e *Event) ToJSON() string {
 }
 
 // EventQueue is a thread-safe bounded queue for events.
-// It provides non-blocking poll operations for gomobile compatibility.
+// It provides non-blocking poll operations.
 //
 // OVERFLOW BEHAVIOR:
 // When the queue is full and Push() is called:
@@ -280,7 +280,6 @@ func (q *EventQueue) Poll() *Event {
 
 // PollJSON retrieves the next event as a JSON string.
 // Returns an empty string if the queue is empty (non-blocking).
-// This is the primary method for gomobile compatibility.
 func (q *EventQueue) PollJSON() string {
 	event := q.Poll()
 	if event == nil {

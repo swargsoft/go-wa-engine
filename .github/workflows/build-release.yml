@@ -21,11 +21,11 @@ jobs:
       - name: Build
         run: |
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-            go build -ldflags="-s -w" -o wa-server-linux-amd64 ./cmd/server
+            go build -ldflags="-s -w" -o waengine-linux-amd64 ./cmd/server
       - uses: actions/upload-artifact@v4
         with:
           name: linux-amd64
-          path: wa-server-linux-amd64
+          path: waengine-linux-amd64
 
   # ── Linux arm64 ──────────────────────────────────────────────────────────────
   build-linux-arm64:
@@ -41,11 +41,11 @@ jobs:
         run: |
           CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
             CC=aarch64-linux-gnu-gcc \
-            go build -ldflags="-s -w" -o wa-server-linux-arm64 ./cmd/server
+            go build -ldflags="-s -w" -o waengine-linux-arm64 ./cmd/server
       - uses: actions/upload-artifact@v4
         with:
           name: linux-arm64
-          path: wa-server-linux-arm64
+          path: waengine-linux-arm64
 
   # Single job builds BOTH mac binaries on the ARM runner via cross-compilation.
   # Eliminates the flaky macos-13 Intel runner which has very limited availability.
@@ -60,19 +60,19 @@ jobs:
       - name: Build mac-arm64
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-            go build -ldflags="-s -w" -o wa-server-mac-arm64 ./cmd/server
+            go build -ldflags="-s -w" -o waengine-mac-arm64 ./cmd/server
       - name: Build mac-amd64 (cross-compiled from ARM)
         run: |
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-            go build -ldflags="-s -w" -o wa-server-mac-amd64 ./cmd/server
+            go build -ldflags="-s -w" -o waengine-mac-amd64 ./cmd/server
       - uses: actions/upload-artifact@v4
         with:
           name: mac-arm64
-          path: wa-server-mac-arm64
+          path: waengine-mac-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: mac-amd64
-          path: wa-server-mac-amd64
+          path: waengine-mac-amd64
 
   build-windows:
     runs-on: windows-latest
@@ -84,42 +84,11 @@ jobs:
       - name: Build
         run: |
           $env:CGO_ENABLED = "1"
-          go build -ldflags="-s -w" -o wa-server-windows-amd64.exe ./cmd/server
+          go build -ldflags="-s -w" -o waengine-windows-amd64.exe ./cmd/server
       - uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
-          path: wa-server-windows-amd64.exe
-
-  # ── Android AAR ──────────────────────────────────────────────────────────────
-  build-android:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        # --progress=plain shows every line of output including the real gomobile error
-        # --no-cache ensures a clean build (remove after debugging if you want caching)
-        run: |
-          docker build \
-            --progress=plain \
-            --platform=linux/amd64 \
-            -f bindings/android/Dockerfile \
-            -t wa-engine-builder \
-            .
-
-      - name: Extract AAR from container
-        run: |
-          mkdir -p bindings/android/build
-          docker create --name tmp-builder wa-engine-builder
-          docker cp tmp-builder:/workspace/bindings/android/build/waengine.aar \
-            ./bindings/android/build/waengine.aar
-          docker rm tmp-builder
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-aar
-          path: bindings/android/build/waengine.aar
+          path: waengine-windows-amd64.exe
 
   # ── Publish GitHub Release ────────────────────────────────────────────────────
   release:
@@ -128,7 +97,6 @@ jobs:
       - build-linux-arm64
       - build-mac
       - build-windows
-      - build-android
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -148,12 +116,11 @@ jobs:
           tag_name: ${{ steps.version.outputs.VERSION }}
           name: WA Engine ${{ steps.version.outputs.VERSION }}
           files: |
-            dist/linux-amd64/wa-server-linux-amd64
-            dist/linux-arm64/wa-server-linux-arm64
-            dist/mac-arm64/wa-server-mac-arm64
-            dist/mac-amd64/wa-server-mac-amd64
-            dist/windows-amd64/wa-server-windows-amd64.exe
-            dist/android-aar/waengine.aar
+            dist/linux-amd64/waengine-linux-amd64
+            dist/linux-arm64/waengine-linux-arm64
+            dist/mac-arm64/waengine-mac-arm64
+            dist/mac-amd64/waengine-mac-amd64
+            dist/windows-amd64/waengine-windows-amd64.exe
           body: |
             ## WA Engine ${{ steps.version.outputs.VERSION }}
 
@@ -162,36 +129,20 @@ jobs:
 
             | Platform | File |
             |---|---|
-            | Linux x64 | `wa-server-linux-amd64` |
-            | Linux arm64 (Raspberry Pi, etc.) | `wa-server-linux-arm64` |
-            | macOS Intel | `wa-server-mac-amd64` |
-            | Windows x64 | `wa-server-windows-amd64.exe` |
+            | Linux x64 | `waengine-linux-amd64` |
+            | Linux arm64 (Raspberry Pi, etc.) | `waengine-linux-arm64` |
+            | macOS Intel | `waengine-mac-amd64` |
+            | Windows x64 | `waengine-windows-amd64.exe` |
 
             **Quick start (Mac/Linux):**
             ```bash
-            chmod +x wa-server-*
-            ./wa-server-mac-arm64 --port 8080 --data ~/wa-data
+            chmod +x waengine-*
+            ./waengine-mac-arm64 --port 8080 --data ~/wa-data
             ```
 
             **Quick start (Windows):**
             ```powershell
-            .\wa-server-windows-amd64.exe --port 8080 --data C:\wa-data
+            .\waengine-windows-amd64.exe --port 8080 --data C:\wa-data
             ```
-
-            ### Android
-            `waengine.aar` - embed in your Android app and start `WaEngineService`.
-            The service runs the HTTP server on `localhost:8080`; your PWA connects to it.
-
-            #### Add to your Android app
-            1. Copy `waengine.aar` → `app/libs/waengine.aar`
-            2. In `app/build.gradle`:
-               ```groovy
-               dependencies {
-                   implementation files('libs/waengine.aar')
-               }
-               ```
-            3. Copy `WaEngineService.kt` into your app package
-            4. Register in `AndroidManifest.xml`
-            5. Start it: `ContextCompat.startForegroundService(this, Intent(this, WaEngineService::class.java))`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

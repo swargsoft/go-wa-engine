@@ -1,10 +1,10 @@
 // cmd/server/main.go - platform-independent HTTP server for wa-engine
 //
 // BUILD FOR MAC (testing):
-//   go build -o wa-server ./cmd/server && ./wa-server --port 8080 --data ./wa-data
+//   go build -o waengine ./cmd/server && ./waengine --port 8080 --data ./wa-data
 //
 // BUILD FOR LINUX:
-//   GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o wa-server-linux ./cmd/server
+//   GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o waengine-linux ./cmd/server
 //
 // API:
 //   POST   /api/sessions/:name/pair           Start QR pairing
@@ -188,6 +188,10 @@ func (s *server) routeSession(w http.ResponseWriter, r *http.Request) {
 		s.handleSendText(w, r, name)
 	case action == "send" && sub == "image" && r.Method == http.MethodPost:
 		s.handleSendImage(w, r, name)
+	case action == "profile" && sub == "" && r.Method == http.MethodGet:
+		s.handleGetOwnProfile(w, r, name)
+	case action == "profile" && sub != "" && r.Method == http.MethodGet:
+		s.handleGetUserProfile(w, r, name, sub)
 	default:
 		jsonError(w, http.StatusNotFound, "not_found",
 			fmt.Sprintf("Unknown route: %s %s", r.Method, r.URL.Path))
@@ -246,8 +250,7 @@ func (s *server) handleStop(w http.ResponseWriter, r *http.Request, name string)
 }
 
 func (s *server) handleRemoveSession(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.RemoveSession(sessionName string) error
-	if err := s.sm.RemoveSession(name); err != nil {
+	if err := s.sm.LogoutSession(name); err != nil {
 		jsonError(w, http.StatusBadRequest, "remove_error", err.Error())
 		return
 	}
@@ -404,6 +407,26 @@ func (s *server) handleSendImage(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 	jsonOK(w, map[string]string{"id": msgID, "status": "sent"})
+}
+
+func (s *server) handleGetOwnProfile(w http.ResponseWriter, r *http.Request, name string) {
+	profileJSON, err := s.sm.GetOwnProfile(name)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "profile_error", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(profileJSON))
+}
+
+func (s *server) handleGetUserProfile(w http.ResponseWriter, r *http.Request, name, jid string) {
+	profileJSON, err := s.sm.GetUserProfile(name, jid)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "profile_error", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(profileJSON))
 }
 
 // --- Response helpers ---

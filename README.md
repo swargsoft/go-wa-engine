@@ -1,10 +1,10 @@
 # wa-engine
 
-A production-ready, cross-platform WhatsApp SDK built with Go and WhatsMeow, designed for Android and iOS integration via gomobile.
+A production-ready, cross-platform WhatsApp server built with Go and WhatsMeow, designed for desktop and server deployments (macOS, Linux, Windows).
 
 ## Overview
 
-wa-engine provides a clean, stable API for WhatsApp functionality that can be embedded in mobile applications. It handles:
+wa-engine provides a clean, stable HTTP API for WhatsApp functionality. It handles:
 
 - **Multi-account support** - up to 5 concurrent WhatsApp sessions
 - **QR code authentication** with proper lifecycle (qr.updated, qr.expired, pairing.success/failed)
@@ -34,7 +34,7 @@ wa-engine provides a clean, stable API for WhatsApp functionality that can be em
 ```
 wa-engine/
 ├── core/                    # Core Go implementation
-│   ├── session.go          # Multi-session manager (NEW)
+│   ├── session.go          # Multi-session manager
 │   ├── engine.go           # Per-session engine and lifecycle
 │   ├── client.go           # WhatsMeow client wrapper with state machine
 │   ├── send.go             # Message sending with media support
@@ -42,12 +42,8 @@ wa-engine/
 │   ├── storage.go          # Session persistence (SQLite)
 │   └── errors.go           # Stable error codes
 │
-├── bindings/               # Platform-specific bindings
-│   └── android/
-│       ├── build-aar.sh    # AAR build script
-│       └── README.md       # Android integration guide
-│
-├── waengine.go             # Public gomobile-compatible API
+├── cmd/server/             # HTTP server entry point
+│   └── main.go
 ├── go.mod
 └── README.md
 ```
@@ -69,55 +65,33 @@ dataDir/
 
 ## Quick Start
 
-### Building for Android
-
-#### Method 1: Docker Build (Recommended)
-
-Due to gomobile compatibility issues with newer Go versions, Docker provides a reliable build environment:
+Build and run the server:
 
 ```bash
-# Prerequisites: Docker Desktop installed and running
+# Build for macOS
+make mac
 
-cd bindings/android
-
-# Build Docker image with Go 1.24 and dependencies
-docker build --platform=linux/amd64 -f Dockerfile.aar-build -t wa-engine-builder ..
-
-# Run container to build AAR
-docker run --platform=linux/amd64 --rm -v "$(pwd)/build:/workspace/bindings/android/build" wa-engine-builder
-
-# Output: build/waengine.aar (46MB)
+# Run the server
+./build/waengine --port 8080 --data ./wa-data
 ```
 
-#### Method 2: Local Build
+Once running, open the PWA in your browser and connect to `http://localhost:8080`.
+
+## Usage
+
+### Start the Server
 
 ```bash
-# Prerequisites
-# - Go 1.24+ (required for whatsmeow API)
-# - Android SDK with NDK
-# - gomobile: go install golang.org/x/mobile/cmd/gomobile@latest
-
-# Note: May encounter gomobile compatibility issues on macOS
-# Recommend using Docker method above
-
-cd bindings/android
-./build-aar.sh
-
-# Output: build/waengine.aar
+./build/waengine --port 8080 --data ./wa-data
 ```
 
-### Integration
+### REST API
 
-See [bindings/android/README.md](bindings/android/README.md) for detailed Android integration instructions.
+The server exposes a REST API to manage WhatsApp sessions. See `cmd/server/main.go` for the full API reference.
 
-## Multi-Session Usage
+### Multi-Session Support
 
-### Setting Up Multiple Accounts
-
-```kotlin
-// Kotlin (Android)
-
-// Initialize once on app start
+The server supports up to 5 concurrent WhatsApp accounts. Create and manage sessions via the REST API:
 waengine.Init(dataDir)
 
 // Set up "work" account
@@ -143,181 +117,37 @@ waengine.SendTextSession(jid, "personal", "Hello from personal!")
 
 ### Polling Events Per Session
 
-```kotlin
-// Poll each session's event queue
-val workEvent = waengine.PollEventSession("work")
-val personalEvent = waengine.PollEventSession("personal")
-
-// Process events...
+```bash
+# Poll events for a session
+curl http://localhost:8080/api/sessions/work/events
 ```
 
 ### App Restart (Existing Sessions)
 
-```kotlin
-// Init automatically discovers existing sessions from disk
-waengine.Init(dataDir)
-
-// Get list of existing sessions
-val sessionsJson = waengine.ListSessions()
-// Returns: ["default", "work", "personal"]
-
-// Reconnect each paired session
-for (session in sessions) {
-    if (waengine.IsPairedSession(session)) {
-        waengine.StartSession(session)
-    }
-}
-```
+Sessions persist in SQLite across restarts. On restart, the server auto-discovers existing sessions from disk.
 
 ## Lifecycle & App Restart Handling
 
 ### First Time (No Session)
 
 ```
-1. Init(dataDir)                    // Initialize session manager
-2. StartPairingSession("work")      // Begin QR authentication
-3. Poll PollEventSession("work")    // Get qr.updated events
-4. Wait for pairing.success         // User scanned QR
-5. Session stored in SQLite         // Automatic
+1. POST /api/sessions/work/pair    Start QR pairing
+2. GET  /api/sessions/work/qr      Poll for QR code
+3. User scans QR in WhatsApp
+4. Session stored in SQLite
 ```
 
 ### App Restart (Existing Sessions)
 
 ```
-1. Init(dataDir)                    // Auto-discovers existing sessions
-2. IsPairedSession("work") == true  // Check for existing session
-3. StartSession("work")             // Auto-reconnects, no QR needed
-4. Wait for connection.open         // Connected!
+1. Server starts, auto-discovers sessions from disk
+2. POST /api/sessions/work/start   Reconnect paired session
+3. Wait for connection.open event
 ```
 
-### Recommended Startup Flow
+## REST API
 
-```kotlin
-// Kotlin (Android)
-waengine.Init(dataDir)
-
-// Reconnect all paired sessions
-val sessions = parseJsonArray(waengine.ListSessions())
-for (session in sessions) {
-    if (waengine.IsPairedSession(session)) {
-        waengine.StartSession(session)
-    }
-}
-```
-
-## Public API
-
-The public API is designed for gomobile compatibility, using only supported types (strings, primitives, JSON).
-
-### Initialization
-
-```go
-// Initialize session manager (call once on app start)
-Init(dataDir string) error
-
-// Clean up all sessions
-Destroy()
-```
-
-### Multi-Session Lifecycle
-
-```go
-// Start connection for a session (auto-reconnects if paired)
-StartSession(sessionName string) error
-
-// Begin QR pairing for a session
-StartPairingSession(sessionName string) error
-
-// Stop a session connection
-StopSession(sessionName string) error
-
-// Stop all sessions (call before app termination)
-StopAll()
-
-// Permanently remove a session and its data
-RemoveSession(sessionName string) error
-```
-
-### Multi-Session Status
-
-```go
-// Check if session has stored authentication
-IsPairedSession(sessionName string) bool
-
-// Check if session is currently connected
-IsConnectedSession(sessionName string) bool
-
-// Get current QR code for session
-GetQRSession(sessionName string) string
-
-// Get session's JID
-GetJIDSession(sessionName string) string
-```
-
-### Multi-Session Messaging
-
-```go
-// Send text message via specific session
-SendTextSession(to string, sessionName string, text string) (string, error)
-
-// Send image with caption via specific session
-SendImageWithCaptionSession(to string, sessionName string, imageSource string, caption string) (string, error)
-```
-
-### Multi-Session Events
-
-```go
-// Poll events for a specific session
-PollEventSession(sessionName string) string
-
-// Get event queue size for a session
-GetEventQueueSizeSession(sessionName string) int
-
-// Clear events for a session
-ClearEventsSession(sessionName string)
-```
-
-### Session Management
-
-```go
-// List all session names (JSON array)
-ListSessions() string
-
-// Get number of active sessions
-GetSessionCount() int
-
-// Get detailed info for a session (JSON)
-GetSessionInfo(sessionName string) string
-
-// Get info for all sessions (JSON)
-GetAllSessionsInfo() string
-
-// Logout and clear session auth
-LogoutSession(sessionName string) error
-```
-
-### Legacy Single-Session API (Backward Compatible)
-
-These functions use the "default" session name:
-
-```go
-NewEngine(dataDir string) error  // Alias for Init()
-Start() error                    // Uses "default" session
-StartPairing() error             // Uses "default" session
-Stop()                           // Uses "default" session
-IsPaired() bool                  // Uses "default" session
-SendText(jid, text string) (string, error)  // Uses "default" session
-PollEvent() string               // Uses "default" session
-```
-
-### Connection Lifecycle
-
-```go
-// Start WhatsApp connection (auto-reconnects if session exists)
-// IDEMPOTENT: safe to call multiple times
-Start() error
-
-// Begin QR pairing flow (use when IsPaired() is false)
+The server exposes the following endpoints. All requests use `Content-Type: application/json`.
 // Emits: qr.updated, qr.expired, pairing.success, pairing.failed
 StartPairing() error
 
@@ -395,7 +225,7 @@ GetInfo() string
 
 ## Event System
 
-Events are delivered via `PollEvent()` as JSON strings. This design is gomobile-compatible and allows flexible event handling on any platform.
+Events are delivered via `PollEvent()` as JSON strings.
 
 ### Event Queue Behavior
 
@@ -561,7 +391,7 @@ Destroy()
 
 ## Thread Safety
 
-All public API functions are thread-safe and can be called from any thread:
+The server and core library are thread-safe:
 
 - **RWMutex protection**: SessionManager and Storage operations protected
 - **Atomic state management**: Engine state uses atomic operations
@@ -570,23 +400,17 @@ All public API functions are thread-safe and can be called from any thread:
 
 ## Design Decisions
 
-### Why gomobile?
-
-gomobile provides native performance with a single codebase. The Go core runs directly on device without any JavaScript runtime overhead.
-
 ### Why polling instead of callbacks?
 
-gomobile has limited support for callbacks. A polling-based event queue is:
+A polling-based event queue is:
 
-- Fully compatible with gomobile bind
 - Easy to integrate with any UI framework
 - Non-blocking and predictable
 
 ### Why JSON for complex data?
 
-gomobile only supports primitive types. JSON serialization allows:
+JSON serialization allows:
 
-- Passing complex structures across the language boundary
 - Forward compatibility (new fields don't break old code)
 - Easy parsing in any language
 
@@ -601,7 +425,7 @@ This prevents accidental QR generation when a session exists.
 
 ### Why limit to 5 sessions?
 
-Resource constraints on mobile devices:
+Resource constraints:
 
 - Each session maintains a WebSocket connection
 - Each session has its own SQLite database
@@ -610,11 +434,11 @@ Resource constraints on mobile devices:
 
 ### Why auto-discover sessions?
 
-Seamless app restart experience:
+Seamless restart experience:
 
-- Init() scans dataDir for existing session directories
+- Session manager scans dataDir for existing session directories
 - No manual session registration required
-- Sessions survive app kills and updates
+- Sessions survive restarts
 
 ## Build Notes
 
@@ -628,22 +452,8 @@ This version is updated for the latest whatsmeow API (January 2026) with breakin
 - **Storage API**: `sqlstore.New()` now requires context and logger parameters
 - **Error Handling**: `PairError.Error` is now a field, not a method
 
-### Docker Build Environment
-
-The Docker build uses:
-
-- **Base Image**: `golang:1.24-bookworm` (Debian 12)
-- **Java**: OpenJDK 17 (for Android SDK tools)
-- **Android NDK**: 25.1.8937393
-- **gomobile**: Latest version compatible with Go 1.24
-- **Platform**: `linux/amd64` (for cross-platform compatibility)
-
-Build time: ~8-12 minutes (first build), ~2-3 minutes (cached)
-
 ### Known Issues
 
-- **gomobile on macOS**: Native gomobile build may fail with "unable to import bind" error on macOS with Go 1.24+. Use Docker build method.
-- **ARM64 Host**: Docker must use `--platform=linux/amd64` to avoid architecture compatibility issues
 - **Go Version**: Requires Go 1.24+ due to whatsmeow dependencies. Go 1.22 is no longer supported.
 
 ## Future Enhancements
@@ -652,7 +462,7 @@ Build time: ~8-12 minutes (first build), ~2-3 minutes (cached)
 - [ ] Document/file sending
 - [ ] Group management (create, add members, etc.)
 - [ ] Contact sync
-- [ ] iOS bindings
+
 - [ ] Message history retrieval
 - [ ] Presence updates
 - [ ] Business API features
@@ -671,7 +481,7 @@ See LICENSE file.
 
 Contributions are welcome! Please ensure all code:
 
-- Maintains gomobile compatibility
+- Follows existing code style and patterns
 - Is thread-safe and idempotent where applicable
 - Includes proper documentation
 - Follows existing code style

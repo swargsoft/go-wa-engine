@@ -31,14 +31,6 @@ yarn.lock
 *~
 .DS_Store
 
-# Android
-*.apk
-*.aab
-local.properties
-.gradle/
-.cxx/
-*.iml
-
 # iOS
 *.xcworkspace
 !default.xcworkspace
@@ -68,3 +60,4 @@ coverage/
 *.db
 *.db-shm
 *.db-wal
+wa-engine
