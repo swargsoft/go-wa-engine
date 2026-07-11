@@ -300,7 +300,7 @@ func (s *server) handlePhonePair(w http.ResponseWriter, r *http.Request, name st
 		"status":       "pairing_started",
 		"session":      name,
 		"pairing_code": code,
-		"message":      "Enter this code in WhatsApp → Linked Devices → Link a Device",
+		"message":      "Enter this code in WhatsApp -> Linked Devices -> Link a Device",
 	})
 }
 

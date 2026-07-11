@@ -172,7 +172,7 @@ func (c *Client) StartPairing() error {
 }
 
 // StartPhonePairing initiates code-based phone pairing.
-// The user enters the returned code in WhatsApp → Linked Devices → Link a Device.
+// The user enters the returned code in WhatsApp -> Linked Devices -> Link a Device.
 func (c *Client) StartPhonePairing(phone string) (string, error) {
 	current := ClientState(atomic.LoadInt32(&c.state))
 	if current == StatePairing {

@@ -151,7 +151,7 @@ func StartPairingSession(sessionName string) error {
 // StartPhonePairingSession initiates code-based phone pairing for a named session.
 // Creates the session if it doesn't exist.
 // Returns the 8-character pairing code (XXXX-XXXX format) that the user enters
-// in WhatsApp → Linked Devices → Link a Device.
+// in WhatsApp -> Linked Devices -> Link a Device.
 //
 // phone: full international phone number with country code (no + or 00 prefix).
 //
