@@ -188,9 +188,15 @@ func (c *Client) StartPhonePairing(phone string) (string, error) {
 	atomic.StoreInt32(&c.state, int32(StatePairing))
 	atomic.StoreInt32(&c.pairingActive, 1)
 
+	// Disable auto-reconnect during phone pairing: if the user backgrounds the app
+	// to enter the code in WhatsApp, the socket may drop. Auto-reconnect would fire
+	// before pairing completes and WhatsApp closes the connection with "disconnected".
+	c.client.EnableAutoReconnect = false
+
 	c.client.AddEventHandler(c.handleEvent)
 
 	if err := c.client.Connect(); err != nil {
+		c.client.EnableAutoReconnect = true
 		atomic.StoreInt32(&c.state, int32(StateDisconnected))
 		atomic.StoreInt32(&c.pairingActive, 0)
 		return "", WrapError(ErrCodeConnectionFailed, "Failed to connect for pairing", err)
@@ -207,6 +213,7 @@ func (c *Client) StartPhonePairing(phone string) (string, error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if !c.client.IsConnected() {
+		c.client.EnableAutoReconnect = true
 		atomic.StoreInt32(&c.state, int32(StateDisconnected))
 		atomic.StoreInt32(&c.pairingActive, 0)
 		return "", NewError(ErrCodeConnectionTimeout, "Timed out waiting for connection")
@@ -215,6 +222,7 @@ func (c *Client) StartPhonePairing(phone string) (string, error) {
 	clientType, displayName := getPairClientInfo()
 	code, err := c.client.PairPhone(context.Background(), phone, false, clientType, displayName)
 	if err != nil {
+		c.client.EnableAutoReconnect = true
 		atomic.StoreInt32(&c.state, int32(StateDisconnected))
 		atomic.StoreInt32(&c.pairingActive, 0)
 		return "", WrapError(ErrCodePairingFailed, "Failed to generate pairing code", err)
@@ -431,6 +439,7 @@ func (c *Client) handleEvent(evt interface{}) {
 
 	case *events.PairSuccess:
 		c.log.Infof("Device pairing successful: %s", v.ID.String())
+		c.client.EnableAutoReconnect = true
 		atomic.StoreInt32(&c.state, int32(StateConnected))
 		atomic.StoreInt32(&c.pairingActive, 0)
 		c.mu.Lock()
