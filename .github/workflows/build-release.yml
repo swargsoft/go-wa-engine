@@ -188,7 +188,7 @@ jobs:
       - name: Generate version manifest (latest.json)
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          TAG_URL="https://github.com/${{ github.repository }}/releases/download/${VERSION}"
+          TAG_URL="https://github.com/swargsoft/go-wa-engine/releases/download/${VERSION}"
           cat > latest.json <<EOF
           {
             "version": "${VERSION}",
