@@ -49,6 +49,13 @@ run: mac
 run-secure: mac
 	$(OUT_DIR)/waengine --port 8080 --data $(DATA_DIR) --key my-secret-key
 
+# Install as a background system service (auto-starts on boot, survives sleep/wake)
+install-service: mac
+	sudo $(OUT_DIR)/waengine --install-service --port 8080
+
+uninstall-service:
+	sudo $(OUT_DIR)/waengine --uninstall-service
+
 # ─── Smoke tests (requires server running + jq installed) ─────────────────────
 
 test-send:

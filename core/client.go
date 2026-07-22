@@ -79,10 +79,10 @@ func NewClient(storage *Storage, eventQueue *EventQueue, log waLog.Logger) (*Cli
 
 	waClient := whatsmeow.NewClient(device, log)
 
-	// Anti-ban: allow some auto-reconnect but not unlimited hammering.
+	// Anti-ban: allow more auto-reconnect attempts to survive sleep/wake cycles.
 	// We layer our own backoff on top via the Disconnected event.
 	waClient.EnableAutoReconnect = true
-	waClient.AutoReconnectErrors = 3 // reduced from 5 - fail faster, back off ourselves
+	waClient.AutoReconnectErrors = 10 // was 3 — gives enough time for network to recover after wake
 
 	return &Client{
 		client:     waClient,

@@ -289,39 +289,35 @@ jobs:
             | Linux arm64 | `waengine-linux-arm64` | `${{ needs.build-linux-arm64.outputs.sha256 }}` |
             | Windows x64 | `waengine-windows-amd64.exe` | `${{ needs.build-windows.outputs.sha256 }}` |
 
-            **Quick start (Mac/Linux):**
+            **Run once in foreground (Mac/Linux):**
             ```bash
-            # Download
-            curl -L -o waengine "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/waengine-<platform>"
-
-            # Verify
-            echo "<sha256>  waengine" | sha256sum --check
-
-            # Run
-            chmod +x waengine
-            ./waengine --port 8080 --data ~/wa-data
+            chmod +x waengine-mac-arm64
+            ./waengine-mac-arm64 --port 8080
             ```
 
-            **Quick start (Windows):**
+            **Install as background service — auto-starts on boot, survives sleep/wake (Mac/Linux):**
+            ```bash
+            chmod +x waengine-mac-arm64
+            sudo ./waengine-mac-arm64 --install-service --port 8080
+            # Uninstall: sudo ./waengine-mac-arm64 --uninstall-service
+            ```
+
+            **Install as background service (Windows — run PowerShell as Administrator):**
             ```powershell
-            # Download
-            curl.exe -L -o waengine.exe "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/waengine-windows-amd64.exe"
+            .\waengine-windows-amd64.exe --install-service --port 8080
+            # Uninstall: .\waengine-windows-amd64.exe --uninstall-service
+            ```
 
-            # Verify (PowerShell)
-            Get-FileHash waengine.exe -Algorithm SHA256
-
-            # Run
-            .\waengine.exe --port 8080 --data C:\wa-data
+            **Run once in foreground (Windows):**
+            ```powershell
+            .\waengine-windows-amd64.exe --port 8080
             ```
 
             ### Verify Checksums
 
             ```bash
-            # Download the aggregated checksums file
             curl -L -O "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/SHA256SUMS"
-
-            # Verify all binaries
             sha256sum --check SHA256SUMS
             ```
-        env:
+                env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

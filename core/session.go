@@ -50,6 +50,10 @@ type SessionManager struct {
 
 	// initialized prevents double-initialization
 	initialized bool
+
+	// preSleepSessions holds names of sessions that were connected before sleep
+	// so the SleepMonitor can reconnect them on wake.
+	preSleepSessions []string
 }
 
 // SessionInfo contains metadata about a session for external inspection.

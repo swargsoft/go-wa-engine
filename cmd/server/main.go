@@ -6,6 +6,10 @@
 // BUILD FOR LINUX:
 //   GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o waengine-linux ./cmd/server
 //
+// SERVICE INSTALL (run once after downloading):
+//   sudo ./waengine --install-service   # registers + starts background service
+//   sudo ./waengine --uninstall-service # stops + removes service
+//
 // API:
 //   POST   /api/sessions/:name/pair           Start QR pairing
 //   POST   /api/sessions/:name/pair-code      Start phone pairing (code-based)
@@ -42,15 +46,25 @@ import (
 )
 
 var (
-	flagPort   = flag.Int("port", 8080, "HTTP server port")
-	flagData   = flag.String("data", "./wa-data", "Data directory for session storage")
-	flagHost   = flag.String("host", "127.0.0.1", "Bind address (127.0.0.1 = local only)")
-	flagAPIKey = flag.String("key", "", "Optional API key (empty = no auth)")
-	flagVer    = flag.Bool("version", false, "Print version and exit")
+	flagPort      = flag.Int("port", 8080, "HTTP server port")
+	flagData      = flag.String("data", "", "Data directory for session storage (default: ~/.wa-engine)")
+	flagHost      = flag.String("host", "127.0.0.1", "Bind address (127.0.0.1 = local only)")
+	flagAPIKey    = flag.String("key", "", "Optional API key (empty = no auth)")
+	flagVer       = flag.Bool("version", false, "Print version and exit")
+	flagInstall   = flag.Bool("install-service", false, "Install and start wa-engine as a system service")
+	flagUninstall = flag.Bool("uninstall-service", false, "Stop and remove the wa-engine system service")
 )
 
 type server struct {
 	sm *core.SessionManager
+}
+
+func defaultDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./wa-data"
+	}
+	return filepath.Join(home, ".wa-engine")
 }
 
 func main() {
@@ -61,7 +75,25 @@ func main() {
 		os.Exit(0)
 	}
 
-	dataDir, err := filepath.Abs(*flagData)
+	if *flagInstall {
+		if err := installService(); err != nil {
+			log.Fatalf("install-service failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	if *flagUninstall {
+		if err := uninstallService(); err != nil {
+			log.Fatalf("uninstall-service failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	dataPath := *flagData
+	if dataPath == "" {
+		dataPath = defaultDataDir()
+	}
+	dataDir, err := filepath.Abs(dataPath)
 	if err != nil {
 		log.Fatalf("Invalid data dir: %v", err)
 	}
@@ -73,6 +105,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to init session manager: %v", err)
 	}
+
+	// Start OS-level sleep/wake monitor.
+	sleepMon := core.NewSleepMonitor(sm)
+	go sleepMon.Start()
 
 	srv := &server{sm: sm}
 
@@ -86,14 +122,14 @@ func main() {
 		Addr:        addr,
 		Handler:     authMiddleware(corsMiddleware(mux)),
 		ReadTimeout: 30 * time.Second,
-		// No WriteTimeout - SSE streams need unlimited time
+		// No WriteTimeout — SSE streams need unlimited time.
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("wa-engine server listening on http://%s", addr)
+		log.Printf("wa-engine %s listening on http://%s", core.Version, addr)
 		log.Printf("Data directory: %s", dataDir)
 		if *flagAPIKey != "" {
 			log.Printf("API key auth enabled")
@@ -105,6 +141,7 @@ func main() {
 
 	<-stop
 	log.Println("Shutting down...")
+	sleepMon.Stop()
 	sm.StopAll()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
