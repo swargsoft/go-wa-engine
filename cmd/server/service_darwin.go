@@ -10,15 +10,17 @@ import (
 	"text/template"
 )
 
-const serviceName = "com.waengine.server"
-const plistPath = "/Library/LaunchDaemons/com.waengine.server.plist"
+const (
+	serviceName = "com.swargsoft.msgly"
+	plistPath   = "/Library/LaunchDaemons/com.swargsoft.msgly.plist"
+)
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.waengine.server</string>
+    <string>com.swargsoft.msgly</string>
 
     <key>ProgramArguments</key>
     <array>
@@ -33,20 +35,17 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
         {{- end}}
     </array>
 
-    <!-- Start on boot, keep alive if it crashes -->
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
-
-    <!-- Restart throttle: wait 5s before restarting after a crash -->
     <key>ThrottleInterval</key>
     <integer>5</integer>
 
     <key>StandardOutPath</key>
-    <string>/var/log/wa-engine.log</string>
+    <string>/var/log/msgly-engine.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/wa-engine.log</string>
+    <string>/var/log/msgly-engine.log</string>
 </dict>
 </plist>
 `
@@ -80,7 +79,6 @@ func installService() error {
 		return fmt.Errorf("cannot create data dir: %w", err)
 	}
 
-	// Write plist
 	f, err := os.OpenFile(plistPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("cannot write plist: %w", err)
@@ -97,22 +95,21 @@ func installService() error {
 		return fmt.Errorf("cannot render plist: %w", err)
 	}
 
-	// Unload first in case it was already loaded (idempotent).
 	_ = exec.Command("launchctl", "unload", plistPath).Run()
 
 	if out, err := exec.Command("launchctl", "load", "-w", plistPath).CombinedOutput(); err != nil {
 		return fmt.Errorf("launchctl load failed: %v\n%s", err, out)
 	}
 
-	fmt.Printf("✓ wa-engine service installed and started\n")
+	fmt.Printf("✓ Msgly Service installed and started\n")
 	fmt.Printf("  Plist:   %s\n", plistPath)
 	fmt.Printf("  Data:    %s\n", dataDir)
 	fmt.Printf("  Port:    %d\n", *flagPort)
-	fmt.Printf("  Logs:    /var/log/wa-engine.log\n")
+	fmt.Printf("  Logs:    /var/log/msgly-engine.log\n")
 	fmt.Printf("\nManage with:\n")
 	fmt.Printf("  sudo launchctl stop  %s\n", serviceName)
 	fmt.Printf("  sudo launchctl start %s\n", serviceName)
-	fmt.Printf("  sudo ./waengine --uninstall-service\n")
+	fmt.Printf("  sudo ./msgly-engine --uninstall-service\n")
 	return nil
 }
 
@@ -126,6 +123,6 @@ func uninstallService() error {
 		return fmt.Errorf("cannot remove plist: %w", err)
 	}
 
-	fmt.Println("✓ wa-engine service removed")
+	fmt.Println("✓ Msgly Service removed")
 	return nil
 }

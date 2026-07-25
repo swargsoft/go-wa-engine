@@ -32,19 +32,19 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
             go build -ldflags="-s -w -X ${{ env.MODULE }}/core.Version=${VERSION}" \
-            -o waengine-linux-amd64 ./cmd/server
+            -o msgly-engine-linux-amd64 ./cmd/server
       - name: Generate checksum
         id: checksum
         run: |
-          SHA=$(sha256sum waengine-linux-amd64 | cut -d' ' -f1)
+          SHA=$(sha256sum msgly-engine-linux-amd64 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          echo "$SHA  waengine-linux-amd64" > waengine-linux-amd64.sha256
+          echo "$SHA  msgly-engine-linux-amd64" > msgly-engine-linux-amd64.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: linux-amd64
           path: |
-            waengine-linux-amd64
-            waengine-linux-amd64.sha256
+            msgly-engine-linux-amd64
+            msgly-engine-linux-amd64.sha256
 
   # ── Linux arm64 ──────────────────────────────────────────────────────────────
   build-linux-arm64:
@@ -64,19 +64,19 @@ jobs:
           CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
             CC=aarch64-linux-gnu-gcc \
             go build -ldflags="-s -w -X ${{ env.MODULE }}/core.Version=${VERSION}" \
-            -o waengine-linux-arm64 ./cmd/server
+            -o msgly-engine-linux-arm64 ./cmd/server
       - name: Generate checksum
         id: checksum
         run: |
-          SHA=$(sha256sum waengine-linux-arm64 | cut -d' ' -f1)
+          SHA=$(sha256sum msgly-engine-linux-arm64 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          echo "$SHA  waengine-linux-arm64" > waengine-linux-arm64.sha256
+          echo "$SHA  msgly-engine-linux-arm64" > msgly-engine-linux-arm64.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: linux-arm64
           path: |
-            waengine-linux-arm64
-            waengine-linux-arm64.sha256
+            msgly-engine-linux-arm64
+            msgly-engine-linux-arm64.sha256
 
   # Single job builds BOTH mac binaries on the ARM runner via cross-compilation.
   build-mac:
@@ -96,37 +96,37 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
             go build -ldflags="-s -w -X ${{ env.MODULE }}/core.Version=${VERSION}" \
-            -o waengine-mac-arm64 ./cmd/server
+            -o msgly-engine-mac-arm64 ./cmd/server
       - name: Checksum mac-arm64
         id: checksum-arm64
         run: |
-          SHA=$(shasum -a 256 waengine-mac-arm64 | cut -d' ' -f1)
+          SHA=$(shasum -a 256 msgly-engine-mac-arm64 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          echo "$SHA  waengine-mac-arm64" > waengine-mac-arm64.sha256
+          echo "$SHA  msgly-engine-mac-arm64" > msgly-engine-mac-arm64.sha256
       - name: Build mac-amd64 (cross-compiled from ARM)
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
             go build -ldflags="-s -w -X ${{ env.MODULE }}/core.Version=${VERSION}" \
-            -o waengine-mac-amd64 ./cmd/server
+            -o msgly-engine-mac-amd64 ./cmd/server
       - name: Checksum mac-amd64
         id: checksum-amd64
         run: |
-          SHA=$(shasum -a 256 waengine-mac-amd64 | cut -d' ' -f1)
+          SHA=$(shasum -a 256 msgly-engine-mac-amd64 | cut -d' ' -f1)
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
-          echo "$SHA  waengine-mac-amd64" > waengine-mac-amd64.sha256
+          echo "$SHA  msgly-engine-mac-amd64" > msgly-engine-mac-amd64.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: mac-arm64
           path: |
-            waengine-mac-arm64
-            waengine-mac-arm64.sha256
+            msgly-engine-mac-arm64
+            msgly-engine-mac-arm64.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: mac-amd64
           path: |
-            waengine-mac-amd64
-            waengine-mac-amd64.sha256
+            msgly-engine-mac-amd64
+            msgly-engine-mac-amd64.sha256
 
   build-windows:
     runs-on: windows-latest
@@ -143,22 +143,50 @@ jobs:
           $version = $env:GITHUB_REF -replace 'refs/tags/', ''
           $env:CGO_ENABLED = "1"
           go build -ldflags="-s -w -X $env:MODULE/core.Version=$version" `
-            -o waengine-windows-amd64.exe ./cmd/server
+            -o msgly-engine-windows-amd64.exe ./cmd/server
         env:
           MODULE: ${{ env.MODULE }}
       - name: Generate checksum
         id: checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 waengine-windows-amd64.exe).Hash.ToLower()
+          $hash = (Get-FileHash -Algorithm SHA256 msgly-engine-windows-amd64.exe).Hash.ToLower()
           echo "sha256=$hash" >> $env:GITHUB_OUTPUT
-          "$hash  waengine-windows-amd64.exe" | Out-File -FilePath waengine-windows-amd64.exe.sha256 -Encoding ascii
+          "$hash  msgly-engine-windows-amd64.exe" | Out-File -FilePath msgly-engine-windows-amd64.exe.sha256 -Encoding ascii
+      - name: Sign executable (requires CODESIGN_PFX_B64 secret)
+        if: ${{ env.CODESIGN_PFX_B64 != '' }}
+        shell: pwsh
+        env:
+          CODESIGN_PFX_B64: ${{ secrets.CODESIGN_PFX_B64 }}
+          CODESIGN_PASSWORD: ${{ secrets.CODESIGN_PASSWORD }}
+        run: |
+          # Decode PFX from base64 secret
+          $pfxPath = "$env:TEMP\swargsoft.pfx"
+          [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:CODESIGN_PFX_B64))
+
+          # Find signtool — present on all windows-latest runners
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Sort-Object FullName -Descending | Select-Object -First 1).FullName
+
+          & $signtool sign `
+            /fd SHA256 `
+            /td SHA256 `
+            /tr http://timestamp.digicert.com `
+            /f $pfxPath `
+            /p $env:CODESIGN_PASSWORD `
+            /d "Msgly Engine" `
+            /du "https://msgly.swargsoft.com" `
+            msgly-engine-windows-amd64.exe
+
+          Remove-Item $pfxPath -Force
+          Write-Host "✓ Signed msgly-engine-windows-amd64.exe"
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
           path: |
-            waengine-windows-amd64.exe
-            waengine-windows-amd64.exe.sha256
+            msgly-engine-windows-amd64.exe
+            msgly-engine-windows-amd64.exe.sha256
 
   # ── Generate aggregated checksums + version manifest ─────────────────────────
   checksums:
@@ -196,28 +224,28 @@ jobs:
             "release_url": "https://github.com/${{ github.repository }}/releases/tag/${VERSION}",
             "platforms": {
               "mac-arm64": {
-                "filename": "waengine-mac-arm64",
-                "url": "${TAG_URL}/waengine-mac-arm64",
+                "filename": "msgly-engine-mac-arm64",
+                "url": "${TAG_URL}/msgly-engine-mac-arm64",
                 "sha256": "${{ needs.build-mac.outputs.sha256_arm64 }}"
               },
               "mac-amd64": {
-                "filename": "waengine-mac-amd64",
-                "url": "${TAG_URL}/waengine-mac-amd64",
+                "filename": "msgly-engine-mac-amd64",
+                "url": "${TAG_URL}/msgly-engine-mac-amd64",
                 "sha256": "${{ needs.build-mac.outputs.sha256_amd64 }}"
               },
               "linux-amd64": {
-                "filename": "waengine-linux-amd64",
-                "url": "${TAG_URL}/waengine-linux-amd64",
+                "filename": "msgly-engine-linux-amd64",
+                "url": "${TAG_URL}/msgly-engine-linux-amd64",
                 "sha256": "${{ needs.build-linux-amd64.outputs.sha256 }}"
               },
               "linux-arm64": {
-                "filename": "waengine-linux-arm64",
-                "url": "${TAG_URL}/waengine-linux-arm64",
+                "filename": "msgly-engine-linux-arm64",
+                "url": "${TAG_URL}/msgly-engine-linux-arm64",
                 "sha256": "${{ needs.build-linux-arm64.outputs.sha256 }}"
               },
               "windows-amd64": {
-                "filename": "waengine-windows-amd64.exe",
-                "url": "${TAG_URL}/waengine-windows-amd64.exe",
+                "filename": "msgly-engine-windows-amd64.exe",
+                "url": "${TAG_URL}/msgly-engine-windows-amd64.exe",
                 "sha256": "${{ needs.build-windows.outputs.sha256 }}"
               }
             }
@@ -260,22 +288,22 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.VERSION }}
-          name: WA Engine ${{ steps.version.outputs.VERSION }}
+          name: Msgly Engine ${{ steps.version.outputs.VERSION }}
           files: |
-            dist/linux-amd64/waengine-linux-amd64
-            dist/linux-amd64/waengine-linux-amd64.sha256
-            dist/linux-arm64/waengine-linux-arm64
-            dist/linux-arm64/waengine-linux-arm64.sha256
-            dist/mac-arm64/waengine-mac-arm64
-            dist/mac-arm64/waengine-mac-arm64.sha256
-            dist/mac-amd64/waengine-mac-amd64
-            dist/mac-amd64/waengine-mac-amd64.sha256
-            dist/windows-amd64/waengine-windows-amd64.exe
-            dist/windows-amd64/waengine-windows-amd64.exe.sha256
+            dist/linux-amd64/msgly-engine-linux-amd64
+            dist/linux-amd64/msgly-engine-linux-amd64.sha256
+            dist/linux-arm64/msgly-engine-linux-arm64
+            dist/linux-arm64/msgly-engine-linux-arm64.sha256
+            dist/mac-arm64/msgly-engine-mac-arm64
+            dist/mac-arm64/msgly-engine-mac-arm64.sha256
+            dist/mac-amd64/msgly-engine-mac-amd64
+            dist/mac-amd64/msgly-engine-mac-amd64.sha256
+            dist/windows-amd64/msgly-engine-windows-amd64.exe
+            dist/windows-amd64/msgly-engine-windows-amd64.exe.sha256
             dist/checksums/SHA256SUMS
             dist/checksums/latest.json
           body: |
-            ## WA Engine ${{ steps.version.outputs.VERSION }}
+            ## Msgly Engine ${{ steps.version.outputs.VERSION }}
 
             ### Desktop / server (standalone binaries)
 
@@ -283,34 +311,34 @@ jobs:
 
             | Platform | File | SHA256 |
             |---|---|---|
-            | macOS Apple Silicon | `waengine-mac-arm64` | `${{ needs.build-mac.outputs.sha256_arm64 }}` |
-            | macOS Intel | `waengine-mac-amd64` | `${{ needs.build-mac.outputs.sha256_amd64 }}` |
-            | Linux x64 | `waengine-linux-amd64` | `${{ needs.build-linux-amd64.outputs.sha256 }}` |
-            | Linux arm64 | `waengine-linux-arm64` | `${{ needs.build-linux-arm64.outputs.sha256 }}` |
-            | Windows x64 | `waengine-windows-amd64.exe` | `${{ needs.build-windows.outputs.sha256 }}` |
+            | macOS Apple Silicon | `msgly-engine-mac-arm64` | `${{ needs.build-mac.outputs.sha256_arm64 }}` |
+            | macOS Intel | `msgly-engine-mac-amd64` | `${{ needs.build-mac.outputs.sha256_amd64 }}` |
+            | Linux x64 | `msgly-engine-linux-amd64` | `${{ needs.build-linux-amd64.outputs.sha256 }}` |
+            | Linux arm64 | `msgly-engine-linux-arm64` | `${{ needs.build-linux-arm64.outputs.sha256 }}` |
+            | Windows x64 | `msgly-engine-windows-amd64.exe` | `${{ needs.build-windows.outputs.sha256 }}` |
 
             **Run once in foreground (Mac/Linux):**
             ```bash
-            chmod +x waengine-mac-arm64
-            ./waengine-mac-arm64 --port 8080
+            chmod +x msgly-engine-mac-arm64
+            ./msgly-engine-mac-arm64 --port 8080
             ```
 
             **Install as background service — auto-starts on boot, survives sleep/wake (Mac/Linux):**
             ```bash
-            chmod +x waengine-mac-arm64
-            sudo ./waengine-mac-arm64 --install-service --port 8080
-            # Uninstall: sudo ./waengine-mac-arm64 --uninstall-service
+            chmod +x msgly-engine-mac-arm64
+            sudo ./msgly-engine-mac-arm64 --install-service --port 8080
+            # Uninstall: sudo ./msgly-engine-mac-arm64 --uninstall-service
             ```
 
             **Install as background service (Windows — run PowerShell as Administrator):**
             ```powershell
-            .\waengine-windows-amd64.exe --install-service --port 8080
-            # Uninstall: .\waengine-windows-amd64.exe --uninstall-service
+            .\msgly-engine-windows-amd64.exe --install-service --port 8080
+            # Uninstall: .\msgly-engine-windows-amd64.exe --uninstall-service
             ```
 
             **Run once in foreground (Windows):**
             ```powershell
-            .\waengine-windows-amd64.exe --port 8080
+            .\msgly-engine-windows-amd64.exe --port 8080
             ```
 
             ### Verify Checksums
