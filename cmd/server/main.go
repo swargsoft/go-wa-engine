@@ -89,6 +89,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	if isWindowsServiceRun() {
+		return
+	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	runServer(stop)
+}
+
+func runServer(stop <-chan os.Signal) {
 	dataPath := *flagData
 	if dataPath == "" {
 		dataPath = defaultDataDir()
@@ -106,7 +116,6 @@ func main() {
 		log.Fatalf("Failed to init session manager: %v", err)
 	}
 
-	// Start OS-level sleep/wake monitor.
 	sleepMon := core.NewSleepMonitor(sm)
 	go sleepMon.Start()
 
@@ -122,11 +131,7 @@ func main() {
 		Addr:        addr,
 		Handler:     authMiddleware(corsMiddleware(mux)),
 		ReadTimeout: 30 * time.Second,
-		// No WriteTimeout — SSE streams need unlimited time.
 	}
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		log.Printf("wa-engine %s listening on http://%s", core.Version, addr)

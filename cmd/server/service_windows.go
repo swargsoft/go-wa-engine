@@ -4,12 +4,16 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows/svc"
 )
 
 const (
@@ -17,6 +21,45 @@ const (
 	serviceDisplayName = "Msgly Service"
 	serviceDescription = "Background service for Msgly App."
 )
+
+func isWindowsServiceRun() bool {
+	inService, err := svc.IsWindowsService()
+	if err != nil || !inService {
+		return false
+	}
+	if err := svc.Run(serviceName, &winSvc{}); err != nil {
+		log.Fatalf("Windows service failed: %v", err)
+	}
+	return true
+}
+
+type winSvc struct{}
+
+func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
+	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+
+	var wg sync.WaitGroup
+	stop := make(chan os.Signal, 1)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runServer(stop)
+	}()
+
+	for c := range r {
+		switch c.Cmd {
+		case svc.Interrogate:
+			s <- c.CurrentStatus
+		case svc.Stop, svc.Shutdown:
+			s <- svc.Status{State: svc.StopPending}
+			close(stop)
+			wg.Wait()
+			return false, 0
+		}
+	}
+	return false, 0
+}
 
 var (
 	modShell32              = syscall.NewLazyDLL("shell32.dll")

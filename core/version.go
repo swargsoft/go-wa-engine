@@ -1,3 +1,3 @@
 package core
 
-var Version = "dev"
+var Version = "v1.3.3"
