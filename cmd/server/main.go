@@ -95,25 +95,27 @@ func main() {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	runServer(stop)
+	if err := runServer(stop); err != nil {
+		log.Fatalf("Server error: %v", err)
+	}
 }
 
-func runServer(stop <-chan os.Signal) {
+func runServer(stop <-chan os.Signal) error {
 	dataPath := *flagData
 	if dataPath == "" {
 		dataPath = defaultDataDir()
 	}
 	dataDir, err := filepath.Abs(dataPath)
 	if err != nil {
-		log.Fatalf("Invalid data dir: %v", err)
+		return fmt.Errorf("invalid data dir: %w", err)
 	}
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
-		log.Fatalf("Cannot create data dir: %v", err)
+		return fmt.Errorf("cannot create data dir: %w", err)
 	}
 
 	sm, err := core.NewSessionManager(dataDir)
 	if err != nil {
-		log.Fatalf("Failed to init session manager: %v", err)
+		return fmt.Errorf("failed to init session manager: %w", err)
 	}
 
 	sleepMon := core.NewSleepMonitor(sm)
@@ -133,18 +135,25 @@ func runServer(stop <-chan os.Signal) {
 		ReadTimeout: 30 * time.Second,
 	}
 
+	log.Printf("wa-engine %s listening on http://%s", core.Version, addr)
+	log.Printf("Data directory: %s", dataDir)
+	if *flagAPIKey != "" {
+		log.Printf("API key auth enabled")
+	}
+
+	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("wa-engine %s listening on http://%s", core.Version, addr)
-		log.Printf("Data directory: %s", dataDir)
-		if *flagAPIKey != "" {
-			log.Printf("API key auth enabled")
-		}
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			errCh <- err
 		}
 	}()
 
-	<-stop
+	select {
+	case <-stop:
+	case err := <-errCh:
+		return err
+	}
+
 	log.Println("Shutting down...")
 	sleepMon.Stop()
 	sm.StopAll()
@@ -152,6 +161,7 @@ func runServer(stop <-chan os.Signal) {
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
 	log.Println("Stopped.")
+	return nil
 }
 
 // --- Middleware ---
