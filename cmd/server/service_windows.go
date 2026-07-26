@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -13,7 +14,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows/svc"
-	"golang.org/x/sys/windows/svc/eventlog"
 
 	core "github.com/mml/wa-engine/core"
 )
@@ -29,36 +29,42 @@ func isWindowsServiceRun() bool {
 	if err != nil || !inService {
 		return false
 	}
-	elog, err := eventlog.Open(serviceName)
-	if err != nil {
-		log.Printf("Warning: cannot open event log: %v", err)
-	}
-	if elog != nil {
-		elog.Info(1, fmt.Sprintf("wa-engine %s service starting", core.Version))
+
+	logFile := openLogFile()
+	if logFile != nil {
+		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+		defer logFile.Close()
 	}
 
-	err = svc.Run(serviceName, &winSvc{elog: elog})
-	if elog != nil {
-		if err != nil {
-			elog.Error(1, fmt.Sprintf("service failed: %v", err))
-		}
-		elog.Close()
-	}
+	log.Printf("wa-engine %s service starting", core.Version)
+
+	err = svc.Run(serviceName, &winSvc{})
 	if err != nil {
 		log.Fatalf("Windows service failed: %v", err)
 	}
 	return true
 }
 
-type winSvc struct {
-	elog *eventlog.Log
+func openLogFile() *os.File {
+	dataDir := *flagData
+	if dataDir == "" {
+		dataDir = defaultDataDir()
+	}
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(filepath.Join(dataDir, "service.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil
+	}
+	return f
 }
+
+type winSvc struct{}
 
 func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
-	if w.elog != nil {
-		w.elog.Info(1, "service running, starting HTTP server")
-	}
+	log.Printf("service running, starting HTTP server")
 
 	errCh := make(chan error, 1)
 	stop := make(chan os.Signal, 1)
@@ -77,9 +83,7 @@ func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc
 	for {
 		select {
 		case err := <-errCh:
-			if w.elog != nil {
-				w.elog.Error(1, fmt.Sprintf("server error: %v", err))
-			}
+			log.Printf("server error: %v", err)
 			return true, 1
 		case c, ok := <-r:
 			if !ok {
@@ -89,12 +93,9 @@ func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc
 			case svc.Interrogate:
 				s <- c.CurrentStatus
 			case svc.Stop, svc.Shutdown:
-				if w.elog != nil {
-					w.elog.Info(1, "service stopping")
-				}
+				log.Printf("service stopping")
 				s <- svc.Status{State: svc.StopPending}
 				close(stop)
-				_ = w.elog
 				return false, 0
 			}
 		}
@@ -173,11 +174,6 @@ func elevateIfNeeded() {
 func installService() error {
 	elevateIfNeeded()
 
-	_ = eventlog.Remove(serviceName)
-	if err := eventlog.InstallAsEventCreate(serviceName, eventlog.Error|eventlog.Info|eventlog.Warning); err != nil {
-		fmt.Printf("warning: eventlog install failed (non-fatal): %v\n", err)
-	}
-
 	// Use os.Executable() — more reliable than os.Args[0] after UAC re-launch.
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -234,7 +230,7 @@ func installService() error {
 
 	// Start the service now.
 	if out, err := exec.Command("sc", "start", serviceName).CombinedOutput(); err != nil {
-		return fmt.Errorf("sc start failed: %v\n%s\n\nCheck Event Viewer > Windows Logs > Application for details.", err, out)
+		return fmt.Errorf("sc start failed: %v\n%s\n\nCheck the log file at %s\\service.log for details.", err, out, dataDir)
 	}
 
 	fmt.Printf("\n✓ %s installed and started\n", serviceDisplayName)
@@ -242,10 +238,12 @@ func installService() error {
 	fmt.Printf("  Binary:   %s\n", binaryPath)
 	fmt.Printf("  Data:     %s\n", dataDir)
 	fmt.Printf("  Port:     %d\n", *flagPort)
+	fmt.Printf("  Log:      %s\\service.log\n", dataDir)
 	fmt.Printf("\nManage with:\n")
 	fmt.Printf("  sc stop   %s\n", serviceName)
 	fmt.Printf("  sc start  %s\n", serviceName)
 	fmt.Printf("  sc query  %s\n", serviceName)
+	fmt.Printf("  type \"%s\\service.log\"\n", dataDir)
 	fmt.Printf("  .\\msgly-engine.exe --uninstall-service\n")
 	return nil
 }
@@ -257,7 +255,6 @@ func uninstallService() error {
 	if out, err := exec.Command("sc", "delete", serviceName).CombinedOutput(); err != nil {
 		return fmt.Errorf("sc delete failed: %v\n%s", err, out)
 	}
-	_ = eventlog.Remove(serviceName)
 	fmt.Printf("✓ %s removed\n", serviceDisplayName)
 	return nil
 }
