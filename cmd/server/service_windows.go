@@ -24,21 +24,22 @@ const (
 	serviceDescription = "Background service for Msgly App."
 )
 
-// isWindowsServiceRun MUST be called before flag.Parse().
-// The svc package detects the SCM pipe independently of os.Args,
-// so it works without parsed flags. If we call flag.Parse() first,
-// SCM passes its own args and flag.Parse() calls os.Exit(2) before
-// we ever reach this function — leaving an empty log and exit code 1067.
-func isWindowsServiceRun() bool {
+// checkWindowsService is called from main() BEFORE flag.Parse().
+// It returns true only when running as a Windows SCM service, in which
+// case it parses flags itself, sets up logging, runs the service loop,
+// and returns true when the service exits.
+//
+// On non-service runs (normal CLI) it returns false immediately so
+// main() can continue with flag.Parse() as usual.
+func checkWindowsService() bool {
 	inService, err := svc.IsWindowsService()
 	if err != nil || !inService {
 		return false
 	}
 
-	// Now that we know we're a service, parse flags so *flagData etc. are valid.
-	// SCM does not pass extra args; flag.Parse() on an empty args list is safe.
-	// We silence any parse errors because SCM may inject internal args.
-	_ = flag.CommandLine.Parse(os.Args[1:])
+	// We are the SCM-launched service process.
+	// Parse flags now (SCM does not inject extra args, so this is safe).
+	flag.Parse()
 
 	logFile := openLogFile()
 	if logFile != nil {
@@ -69,11 +70,10 @@ func openLogFile() *os.File {
 	return f
 }
 
-// serviceDataDir returns a stable data directory that is writable by the
-// SYSTEM account (which runs services). os.UserHomeDir() resolves to
-// C:\Windows\system32\config\systemprofile under SYSTEM, which is
-// effectively invisible to normal users and often restricted.
-// We use %PROGRAMDATA%\MsglyEngine instead.
+// serviceDataDir returns a data directory that is writable by the SYSTEM
+// account (which runs Windows services). os.UserHomeDir() under SYSTEM
+// resolves to C:\Windows\system32\config\systemprofile — invisible to users.
+// %PROGRAMDATA%\MsglyEngine (C:\ProgramData\MsglyEngine) is the right place.
 func serviceDataDir() string {
 	pd := os.Getenv("PROGRAMDATA")
 	if pd == "" {
@@ -88,8 +88,8 @@ func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc
 	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	log.Printf("service running, starting HTTP server")
 
-	// Use a plain done channel — inside a service no os.Signal is ever sent;
-	// the SCM sends Stop/Shutdown through the svc.ChangeRequest channel instead.
+	// Plain done channel — inside a Windows service no os.Signal arrives;
+	// stop is signalled by closing this channel when SCM sends Stop/Shutdown.
 	stop := make(chan struct{})
 
 	errCh := make(chan error, 1)
@@ -133,7 +133,6 @@ var (
 	procGetTokenInformation = modAdvapi32.NewProc("GetTokenInformation")
 )
 
-// isElevated returns true if the current process has Administrator privileges.
 func isElevated() bool {
 	var token syscall.Token
 	proc, _ := syscall.GetCurrentProcess()
@@ -142,12 +141,11 @@ func isElevated() bool {
 	}
 	defer token.Close()
 
-	// TokenElevation = 20
 	var elevation uint32
 	var size uint32
 	procGetTokenInformation.Call(
 		uintptr(token),
-		20,
+		20, // TokenElevation
 		uintptr(unsafe.Pointer(&elevation)),
 		4,
 		uintptr(unsafe.Pointer(&size)),
@@ -155,8 +153,6 @@ func isElevated() bool {
 	return elevation != 0
 }
 
-// relaunchElevated re-launches this executable with the same args via
-// ShellExecuteW "runas", which triggers the Windows UAC prompt.
 func relaunchElevated() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -169,14 +165,13 @@ func relaunchElevated() error {
 	params, _ := syscall.UTF16PtrFromString(args)
 	dir, _ := syscall.UTF16PtrFromString(filepath.Dir(exe))
 
-	// SW_SHOWNORMAL = 1
 	ret, _, _ := procShellExecuteW.Call(
 		0,
 		uintptr(unsafe.Pointer(verb)),
 		uintptr(unsafe.Pointer(file)),
 		uintptr(unsafe.Pointer(params)),
 		uintptr(unsafe.Pointer(dir)),
-		1,
+		1, // SW_SHOWNORMAL
 	)
 	if ret <= 32 {
 		return fmt.Errorf("ShellExecuteW returned %d — try running PowerShell as Administrator manually", ret)
@@ -198,7 +193,6 @@ func elevateIfNeeded() {
 func installService() error {
 	elevateIfNeeded()
 
-	// Use os.Executable() — more reliable than os.Args[0] after UAC re-launch.
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot resolve binary path: %w", err)
@@ -210,8 +204,6 @@ func installService() error {
 
 	dataDir := *flagData
 	if dataDir == "" {
-		// Always embed an explicit --data path in the service registration so the
-		// binary doesn't fall back to os.UserHomeDir() (SYSTEM profile) at runtime.
 		dataDir = serviceDataDir()
 	}
 	dataDir, err = filepath.Abs(dataDir)
@@ -222,19 +214,14 @@ func installService() error {
 		return fmt.Errorf("cannot create data dir: %w", err)
 	}
 
-	// Build the service binary path string.
-	// CRITICAL: binPath= must be a SINGLE argument to sc.exe — key=value with no space
-	// between = and value. Passing them as separate exec.Command args breaks SCM parsing.
 	binPath := fmt.Sprintf(`"%s" --port %d --data "%s"`, binaryPath, *flagPort, dataDir)
 	if *flagAPIKey != "" {
 		binPath += fmt.Sprintf(` --key "%s"`, *flagAPIKey)
 	}
 
-	// Stop + delete any existing instance (idempotent).
 	run("sc", "stop", serviceName)
 	run("sc", "delete", serviceName)
 
-	// sc create — binPath= value must be one combined argument.
 	if out, err := exec.Command("sc", "create", serviceName,
 		"binPath="+binPath,
 		"start=auto",
@@ -243,18 +230,15 @@ func installService() error {
 		return fmt.Errorf("sc create failed: %v\n%s", err, out)
 	}
 
-	// Set description.
 	if out, err := exec.Command("sc", "description", serviceName, serviceDescription).CombinedOutput(); err != nil {
 		fmt.Printf("warning: sc description: %v — %s\n", err, out)
 	}
 
-	// Configure failure recovery: restart after 5s on first/second failure, 30s after that.
 	exec.Command("sc", "failure", serviceName,
 		"reset=86400",
 		"actions=restart/5000/restart/5000/restart/30000",
 	).Run()
 
-	// Start the service now.
 	if out, err := exec.Command("sc", "start", serviceName).CombinedOutput(); err != nil {
 		return fmt.Errorf("sc start failed: %v\n%s\n\nCheck the log file at %s\\service.log for details.", err, out, dataDir)
 	}
@@ -285,7 +269,6 @@ func uninstallService() error {
 	return nil
 }
 
-// run executes a command and ignores errors (used for idempotent cleanup steps).
 func run(name string, args ...string) {
 	_ = exec.Command(name, args...).Run()
 }

@@ -2,4 +2,6 @@
 
 package main
 
-func isWindowsServiceRun() bool { return false }
+// checkWindowsService is a no-op on non-Windows platforms.
+// On Windows, service_windows.go provides the real implementation.
+func checkWindowsService() bool { return false }

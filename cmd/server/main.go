@@ -1,31 +1,4 @@
 // cmd/server/main.go - platform-independent HTTP server for wa-engine
-//
-// BUILD FOR MAC (testing):
-//   go build -o waengine ./cmd/server && ./waengine --port 8080 --data ./wa-data
-//
-// BUILD FOR LINUX:
-//   GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o waengine-linux ./cmd/server
-//
-// SERVICE INSTALL (run once after downloading):
-//   sudo ./waengine --install-service   # registers + starts background service
-//   sudo ./waengine --uninstall-service # stops + removes service
-//
-// API:
-//   POST   /api/sessions/:name/pair           Start QR pairing
-//   POST   /api/sessions/:name/pair-code      Start phone pairing (code-based)
-//   POST   /api/sessions/:name/start          Connect existing session
-//   POST   /api/sessions/:name/stop           Disconnect
-//   DELETE /api/sessions/:name                Remove permanently
-//   GET    /api/sessions/:name/status         Status JSON
-//   GET    /api/sessions/:name/qr             Current QR string
-//   GET    /api/sessions/:name/pairing-code   Current pairing code string
-//   GET    /api/sessions/:name/events         Poll next event (non-blocking)
-//   GET    /api/sessions/:name/stream         SSE stream of events
-//   POST   /api/sessions/:name/send/text      Send text message
-//   POST   /api/sessions/:name/send/image     Send image with caption
-//   POST   /api/sessions/:name/active         Mark session active (anti-ban)
-//   GET    /api/sessions                      List all sessions
-//   GET    /api/health                        Health check
 package main
 
 import (
@@ -68,17 +41,18 @@ func defaultDataDir() string {
 }
 
 func main() {
-	// IMPORTANT: isWindowsServiceRun() MUST be called before flag.Parse().
+	// MUST happen before flag.Parse().
 	//
-	// When the Windows SCM launches this binary as a service it may pass internal
-	// arguments that flag.Parse() does not recognise, causing it to call os.Exit(2)
-	// before we ever reach the service detection code — producing exit code 1067
+	// When the Windows SCM launches this binary it may pass internal arguments
+	// that flag.Parse() does not recognise, causing it to call os.Exit(2) before
+	// we ever reach the service detection code — producing exit code 1067
 	// (ERROR_PROCESS_ABORTED) and an empty log file.
 	//
-	// svc.IsWindowsService() detects the SCM via its pipe handle, not os.Args,
-	// so it works correctly before flag.Parse(). If we are a service, that
-	// function calls flag.Parse() itself and never returns here.
-	if isWindowsServiceRun() {
+	// checkWindowsService() calls svc.IsWindowsService() which detects the SCM
+	// via its pipe handle, not os.Args, so it is safe to call before flag.Parse().
+	// If we are running as a service it calls flag.Parse() itself and then blocks
+	// inside svc.Run() until the service stops, then returns true.
+	if checkWindowsService() {
 		return
 	}
 
@@ -103,12 +77,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Normal foreground run: convert OS signal to a plain done channel so that
-	// runServer() has the same signature whether called from here or from the
-	// Windows service path (which never receives os.Signal).
+	// Normal foreground run.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
 	stop := make(chan struct{})
 	go func() {
 		<-sigCh
@@ -120,9 +91,9 @@ func main() {
 	}
 }
 
-// runServer starts the HTTP server and blocks until <-stop is closed.
-// The stop channel is a plain struct{} so it can be closed by both the
-// OS-signal goroutine (foreground) and the Windows SCM handler (service).
+// runServer starts the HTTP server and blocks until stop is closed.
+// stop is a plain chan struct{} so it works from both the OS-signal path
+// (foreground) and the Windows SCM path (service) without type gymnastics.
 func runServer(stop <-chan struct{}) error {
 	dataPath := *flagData
 	if dataPath == "" {
@@ -223,7 +194,6 @@ func authMiddleware(next http.Handler) http.Handler {
 // --- Route dispatcher ---
 
 func (s *server) routeSession(w http.ResponseWriter, r *http.Request) {
-	// Parse: /api/sessions/:name[/:action[/:sub]]
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/sessions/"), "/")
 	if len(parts) < 1 || parts[0] == "" {
 		s.handleSessions(w, r)
@@ -431,8 +401,6 @@ func (s *server) handleMarkActive(w http.ResponseWriter, r *http.Request, name s
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
-// --- Send handlers ---
-
 type sendTextRequest struct {
 	To   string `json:"to"`
 	Text string `json:"text"`
@@ -458,8 +426,8 @@ func (s *server) handleSendText(w http.ResponseWriter, r *http.Request, name str
 
 type sendImageRequest struct {
 	To      string `json:"to"`
-	Source  string `json:"source"`  // URL or base64 data URI
-	Caption string `json:"caption"` // optional
+	Source  string `json:"source"`
+	Caption string `json:"caption"`
 }
 
 func (s *server) handleSendImage(w http.ResponseWriter, r *http.Request, name string) {
@@ -499,8 +467,6 @@ func (s *server) handleGetUserProfile(w http.ResponseWriter, r *http.Request, na
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(profileJSON))
 }
-
-// --- Response helpers ---
 
 func jsonOK(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
