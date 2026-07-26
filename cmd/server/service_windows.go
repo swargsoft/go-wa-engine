@@ -24,11 +24,21 @@ const (
 	serviceDescription = "Background service for Msgly App."
 )
 
+// isWindowsServiceRun MUST be called before flag.Parse().
+// The svc package detects the SCM pipe independently of os.Args,
+// so it works without parsed flags. If we call flag.Parse() first,
+// SCM passes its own args and flag.Parse() calls os.Exit(2) before
+// we ever reach this function — leaving an empty log and exit code 1067.
 func isWindowsServiceRun() bool {
 	inService, err := svc.IsWindowsService()
 	if err != nil || !inService {
 		return false
 	}
+
+	// Now that we know we're a service, parse flags so *flagData etc. are valid.
+	// SCM does not pass extra args; flag.Parse() on an empty args list is safe.
+	// We silence any parse errors because SCM may inject internal args.
+	_ = flag.CommandLine.Parse(os.Args[1:])
 
 	logFile := openLogFile()
 	if logFile != nil {
@@ -38,8 +48,7 @@ func isWindowsServiceRun() bool {
 
 	log.Printf("wa-engine %s service starting", core.Version)
 
-	err = svc.Run(serviceName, &winSvc{})
-	if err != nil {
+	if err := svc.Run(serviceName, &winSvc{}); err != nil {
 		log.Fatalf("Windows service failed: %v", err)
 	}
 	return true
@@ -48,7 +57,7 @@ func isWindowsServiceRun() bool {
 func openLogFile() *os.File {
 	dataDir := *flagData
 	if dataDir == "" {
-		dataDir = defaultDataDir()
+		dataDir = serviceDataDir()
 	}
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil
@@ -60,19 +69,34 @@ func openLogFile() *os.File {
 	return f
 }
 
+// serviceDataDir returns a stable data directory that is writable by the
+// SYSTEM account (which runs services). os.UserHomeDir() resolves to
+// C:\Windows\system32\config\systemprofile under SYSTEM, which is
+// effectively invisible to normal users and often restricted.
+// We use %PROGRAMDATA%\MsglyEngine instead.
+func serviceDataDir() string {
+	pd := os.Getenv("PROGRAMDATA")
+	if pd == "" {
+		pd = `C:\ProgramData`
+	}
+	return filepath.Join(pd, "MsglyEngine")
+}
+
 type winSvc struct{}
 
 func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	log.Printf("service running, starting HTTP server")
 
-	errCh := make(chan error, 1)
-	stop := make(chan os.Signal, 1)
+	// Use a plain done channel — inside a service no os.Signal is ever sent;
+	// the SCM sends Stop/Shutdown through the svc.ChangeRequest channel instead.
+	stop := make(chan struct{})
 
+	errCh := make(chan error, 1)
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				errCh <- fmt.Errorf("panic: %v", r)
+			if rec := recover(); rec != nil {
+				errCh <- fmt.Errorf("panic: %v", rec)
 			}
 		}()
 		if err := runServer(stop); err != nil {
@@ -186,7 +210,9 @@ func installService() error {
 
 	dataDir := *flagData
 	if dataDir == "" {
-		dataDir = defaultDataDir()
+		// Always embed an explicit --data path in the service registration so the
+		// binary doesn't fall back to os.UserHomeDir() (SYSTEM profile) at runtime.
+		dataDir = serviceDataDir()
 	}
 	dataDir, err = filepath.Abs(dataDir)
 	if err != nil {

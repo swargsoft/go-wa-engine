@@ -68,6 +68,20 @@ func defaultDataDir() string {
 }
 
 func main() {
+	// IMPORTANT: isWindowsServiceRun() MUST be called before flag.Parse().
+	//
+	// When the Windows SCM launches this binary as a service it may pass internal
+	// arguments that flag.Parse() does not recognise, causing it to call os.Exit(2)
+	// before we ever reach the service detection code — producing exit code 1067
+	// (ERROR_PROCESS_ABORTED) and an empty log file.
+	//
+	// svc.IsWindowsService() detects the SCM via its pipe handle, not os.Args,
+	// so it works correctly before flag.Parse(). If we are a service, that
+	// function calls flag.Parse() itself and never returns here.
+	if isWindowsServiceRun() {
+		return
+	}
+
 	flag.Parse()
 
 	if *flagVer {
@@ -89,18 +103,27 @@ func main() {
 		os.Exit(0)
 	}
 
-	if isWindowsServiceRun() {
-		return
-	}
+	// Normal foreground run: convert OS signal to a plain done channel so that
+	// runServer() has the same signature whether called from here or from the
+	// Windows service path (which never receives os.Signal).
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	stop := make(chan struct{})
+	go func() {
+		<-sigCh
+		close(stop)
+	}()
+
 	if err := runServer(stop); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
 
-func runServer(stop <-chan os.Signal) error {
+// runServer starts the HTTP server and blocks until <-stop is closed.
+// The stop channel is a plain struct{} so it can be closed by both the
+// OS-signal goroutine (foreground) and the Windows SCM handler (service).
+func runServer(stop <-chan struct{}) error {
 	dataPath := *flagData
 	if dataPath == "" {
 		dataPath = defaultDataDir()
@@ -272,13 +295,11 @@ func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use GET")
 		return
 	}
-	// GetAllSessionsInfo() returns a JSON string directly
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"sessions":%s}`, s.sm.GetAllSessionsInfo())
 }
 
 func (s *server) handlePair(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.StartPairing(sessionName string) error
 	if err := s.sm.StartPairing(name); err != nil {
 		jsonError(w, http.StatusBadRequest, "pair_error", err.Error())
 		return
@@ -291,7 +312,6 @@ func (s *server) handlePair(w http.ResponseWriter, r *http.Request, name string)
 }
 
 func (s *server) handleStart(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.Start(sessionName string) error
 	if err := s.sm.Start(name); err != nil {
 		jsonError(w, http.StatusBadRequest, "start_error", err.Error())
 		return
@@ -300,7 +320,6 @@ func (s *server) handleStart(w http.ResponseWriter, r *http.Request, name string
 }
 
 func (s *server) handleStop(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.Stop(sessionName string) error
 	if err := s.sm.Stop(name); err != nil {
 		jsonError(w, http.StatusBadRequest, "stop_error", err.Error())
 		return
@@ -317,7 +336,6 @@ func (s *server) handleRemoveSession(w http.ResponseWriter, r *http.Request, nam
 }
 
 func (s *server) handleSessionStatus(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.GetSessionInfoJSON(sessionName string) string - returns "" if not found
 	info := s.sm.GetSessionInfoJSON(name)
 	if info == "" {
 		jsonError(w, http.StatusNotFound, "not_found",
@@ -329,7 +347,6 @@ func (s *server) handleSessionStatus(w http.ResponseWriter, r *http.Request, nam
 }
 
 func (s *server) handleGetQR(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.GetQR(sessionName string) string
 	qr := s.sm.GetQR(name)
 	jsonOK(w, map[string]string{"session": name, "qr": qr})
 }
@@ -367,7 +384,6 @@ func (s *server) handlePhonePair(w http.ResponseWriter, r *http.Request, name st
 }
 
 func (s *server) handlePollEvent(w http.ResponseWriter, r *http.Request, name string) {
-	// sm.PollEvent(sessionName string) string
 	event := s.sm.PollEvent(name)
 	w.Header().Set("Content-Type", "application/json")
 	if event == "" {
@@ -402,7 +418,6 @@ func (s *server) handleSSEStream(w http.ResponseWriter, r *http.Request, name st
 			fmt.Fprintf(w, ": ping\n\n")
 			flusher.Flush()
 		case <-ticker.C:
-			// sm.PollEvent(sessionName string) string
 			if event := s.sm.PollEvent(name); event != "" {
 				fmt.Fprintf(w, "data: %s\n\n", event)
 				flusher.Flush()
@@ -412,7 +427,6 @@ func (s *server) handleSSEStream(w http.ResponseWriter, r *http.Request, name st
 }
 
 func (s *server) handleMarkActive(w http.ResponseWriter, r *http.Request, name string) {
-	// Defined in session_extra.go: MarkActiveSession(sessionName string)
 	s.sm.MarkActiveSession(name)
 	jsonOK(w, map[string]string{"status": "ok"})
 }
@@ -434,7 +448,6 @@ func (s *server) handleSendText(w http.ResponseWriter, r *http.Request, name str
 		jsonError(w, http.StatusBadRequest, "missing_fields", "'to' and 'text' are required")
 		return
 	}
-	// sm.SendText(to, sessionName, text string) (string, error)
 	msgID, err := s.sm.SendText(req.To, name, req.Text)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "send_error", err.Error())
@@ -459,7 +472,6 @@ func (s *server) handleSendImage(w http.ResponseWriter, r *http.Request, name st
 		jsonError(w, http.StatusBadRequest, "missing_fields", "'to' and 'source' are required")
 		return
 	}
-	// sm.SendImageWithCaption(to, sessionName, imageSource, caption string) (string, error)
 	msgID, err := s.sm.SendImageWithCaption(req.To, name, req.Source, req.Caption)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "send_error", err.Error())
