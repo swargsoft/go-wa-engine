@@ -171,9 +171,9 @@ func elevateIfNeeded() {
 func installService() error {
 	elevateIfNeeded()
 
-	// Register event source for Windows Event Log.
+	_ = eventlog.Remove(serviceName)
 	if err := eventlog.InstallAsEventCreate(serviceName, eventlog.Error|eventlog.Info|eventlog.Warning); err != nil {
-		return fmt.Errorf("eventlog install failed: %v", err)
+		fmt.Printf("warning: eventlog install failed (non-fatal): %v\n", err)
 	}
 
 	// Use os.Executable() — more reliable than os.Args[0] after UAC re-launch.
