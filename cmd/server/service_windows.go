@@ -9,11 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/eventlog"
 )
 
 const (
@@ -27,38 +27,74 @@ func isWindowsServiceRun() bool {
 	if err != nil || !inService {
 		return false
 	}
-	if err := svc.Run(serviceName, &winSvc{}); err != nil {
+	elog, err := eventlog.Open(serviceName)
+	if err != nil {
+		log.Printf("Warning: cannot open event log: %v", err)
+	}
+	if elog != nil {
+		elog.Info(1, fmt.Sprintf("wa-engine %s service starting", core.Version))
+	}
+
+	err = svc.Run(serviceName, &winSvc{elog: elog})
+	if elog != nil {
+		if err != nil {
+			elog.Error(1, fmt.Sprintf("service failed: %v", err))
+		}
+		elog.Close()
+	}
+	if err != nil {
 		log.Fatalf("Windows service failed: %v", err)
 	}
 	return true
 }
 
-type winSvc struct{}
+type winSvc struct {
+	elog *eventlog.Log
+}
 
 func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	if w.elog != nil {
+		w.elog.Info(1, "service running, starting HTTP server")
+	}
 
-	var wg sync.WaitGroup
+	errCh := make(chan error, 1)
 	stop := make(chan os.Signal, 1)
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				errCh <- fmt.Errorf("panic: %v", r)
+			}
+		}()
 		runServer(stop)
 	}()
 
-	for c := range r {
-		switch c.Cmd {
-		case svc.Interrogate:
-			s <- c.CurrentStatus
-		case svc.Stop, svc.Shutdown:
-			s <- svc.Status{State: svc.StopPending}
-			close(stop)
-			wg.Wait()
-			return false, 0
+	for {
+		select {
+		case err := <-errCh:
+			if w.elog != nil {
+				w.elog.Error(1, fmt.Sprintf("server error: %v", err))
+			}
+			return true, 1
+		case c, ok := <-r:
+			if !ok {
+				return false, 0
+			}
+			switch c.Cmd {
+			case svc.Interrogate:
+				s <- c.CurrentStatus
+			case svc.Stop, svc.Shutdown:
+				if w.elog != nil {
+					w.elog.Info(1, "service stopping")
+				}
+				s <- svc.Status{State: svc.StopPending}
+				close(stop)
+				_ = w.elog
+				return false, 0
+			}
 		}
 	}
-	return false, 0
 }
 
 var (
@@ -132,6 +168,11 @@ func elevateIfNeeded() {
 
 func installService() error {
 	elevateIfNeeded()
+
+	// Register event source for Windows Event Log.
+	if err := eventlog.InstallAsEventCreate(serviceName, eventlog.Error|eventlog.Info|eventlog.Warning); err != nil {
+		return fmt.Errorf("eventlog install failed: %v", err)
+	}
 
 	// Use os.Executable() — more reliable than os.Args[0] after UAC re-launch.
 	binaryPath, err := os.Executable()
@@ -212,6 +253,7 @@ func uninstallService() error {
 	if out, err := exec.Command("sc", "delete", serviceName).CombinedOutput(); err != nil {
 		return fmt.Errorf("sc delete failed: %v\n%s", err, out)
 	}
+	_ = eventlog.Remove(serviceName)
 	fmt.Printf("✓ %s removed\n", serviceDisplayName)
 	return nil
 }
