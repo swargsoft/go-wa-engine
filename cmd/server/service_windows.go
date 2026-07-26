@@ -14,6 +14,8 @@ import (
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/eventlog"
+
+	core "github.com/mml/wa-engine/core"
 )
 
 const (
