@@ -69,7 +69,9 @@ func (w *winSvc) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc
 				errCh <- fmt.Errorf("panic: %v", r)
 			}
 		}()
-		runServer(stop)
+		if err := runServer(stop); err != nil {
+			errCh <- err
+		}
 	}()
 
 	for {
