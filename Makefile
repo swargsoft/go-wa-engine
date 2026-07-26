@@ -7,7 +7,7 @@
 #   make test-send    - quick smoke test (requires running server + jq)
 #   make clean        - remove build artifacts
 
-MODULE     := github.com/mml/wa-engine
+MODULE     := github.com/swargsoft/wa-engine
 SERVER_PKG := ./cmd/server
 OUT_DIR    := ./build
 DATA_DIR   := ./wa-data

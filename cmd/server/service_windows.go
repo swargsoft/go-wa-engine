@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sys/windows/svc"
 
-	core "github.com/mml/wa-engine/core"
+	core "github.com/swargsoft/wa-engine/core"
 )
 
 const (

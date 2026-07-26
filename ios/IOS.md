@@ -71,7 +71,7 @@ package main
 import "C"
 import (
     "unsafe"
-    mobilecore "github.com/mml/wa-engine/mobile/core"
+    mobilecore "github.com/swargsoft/wa-engine/mobile/core"
 )
 
 var manager *mobilecore.Manager

@@ -42,7 +42,7 @@ import (
 	"syscall"
 	"time"
 
-	core "github.com/mml/wa-engine/core"
+	core "github.com/swargsoft/wa-engine/core"
 )
 
 var (

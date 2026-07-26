@@ -75,7 +75,7 @@ package mobile
 import "C"
 import (
     "unsafe"
-    mobilecore "github.com/mml/wa-engine/mobile/core"
+    mobilecore "github.com/swargsoft/wa-engine/mobile/core"
 )
 
 var manager *mobilecore.Manager
@@ -131,7 +131,7 @@ func Java_com_msgly_engine_WaEngine_nativeStopSession(env *C.JNIEnv, cls C.jclas
 package mobilecore
 
 import (
-    "github.com/mml/wa-engine/core"
+    "github.com/swargsoft/wa-engine/core"
 )
 
 type Manager struct {

@@ -1,4 +1,4 @@
-module github.com/mml/wa-engine
+module github.com/swargsoft/wa-engine
 
 go 1.25.0
 

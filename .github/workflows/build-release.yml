@@ -6,8 +6,8 @@ on:
       - "v*.*.*"
 
 env:
-  MODULE: github.com/mml/wa-engine
-  VERSION_LDFLAG: -X github.com/mml/wa-engine/core.Version={{ version }}
+  MODULE: github.com/swargsoft/wa-engine
+  VERSION_LDFLAG: -X github.com/swargsoft/wa-engine/core.Version={{ version }}
 
 permissions:
   contents: write
