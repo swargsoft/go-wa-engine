@@ -42,6 +42,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-amd64
+          retention-days: 1
           path: |
             msgly-engine-linux-amd64
             msgly-engine-linux-amd64.sha256
@@ -74,6 +75,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-arm64
+          retention-days: 1
           path: |
             msgly-engine-linux-arm64
             msgly-engine-linux-arm64.sha256
@@ -118,12 +120,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mac-arm64
+          retention-days: 1
           path: |
             msgly-engine-mac-arm64
             msgly-engine-mac-arm64.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: mac-amd64
+          retention-days: 1
           path: |
             msgly-engine-mac-amd64
             msgly-engine-mac-amd64.sha256
@@ -184,6 +188,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
+          retention-days: 1
           path: |
             msgly-engine-windows-amd64.exe
             msgly-engine-windows-amd64.exe.sha256
@@ -256,6 +261,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: checksums
+          retention-days: 1
           path: |
             SHA256SUMS
             latest.json
@@ -349,3 +355,31 @@ jobs:
             ```
                 env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Delete this run's intermediate artifacts after release ─────────────────
+  cleanup:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete this run's artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runId = context.runId;
+            let deleted = 0;
+            for await (const page of github.paginate.iterator(
+              github.rest.actions.listArtifactsForRepo,
+              { owner, repo, per_page: 100 },
+            )) {
+              for (const a of page.data) {
+                if (a.expired) continue;
+                if (a.workflow_run?.id !== runId) continue;
+                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: a.id });
+                core.info(`deleted artifact ${a.name} (${a.id})`);
+                deleted++;
+              }
+            }
+            core.info(`Deleted ${deleted} artifact(s) for run ${runId}`);
