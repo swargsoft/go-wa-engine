@@ -157,8 +157,15 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 msgly-engine-windows-amd64.exe).Hash.ToLower()
           echo "sha256=$hash" >> $env:GITHUB_OUTPUT
           "$hash  msgly-engine-windows-amd64.exe" | Out-File -FilePath msgly-engine-windows-amd64.exe.sha256 -Encoding ascii
-      - name: Install LLVM for arm64 cross-compilation
-        run: choco install llvm --no-progress -y
+      - name: Install llvm-mingw for arm64 cross-compilation
+        shell: pwsh
+        run: |
+          $ver = "20260616"
+          $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$ver/llvm-mingw-$ver-ucrt-x86_64.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\llvm-mingw.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\llvm-mingw.zip" -DestinationPath "C:\"
+          Add-Content $env:GITHUB_PATH "C:\llvm-mingw-$ver-ucrt-x86_64\bin"
       - name: Build arm64
         shell: pwsh
         run: |
@@ -166,7 +173,7 @@ jobs:
           $env:CGO_ENABLED = "1"
           $env:GOOS = "windows"
           $env:GOARCH = "arm64"
-          $env:CC = "clang --target=aarch64-pc-windows-msvc"
+          $env:CC = "aarch64-w64-mingw32-gcc"
           go build -ldflags="-s -w -X $env:MODULE/core.Version=$version" `
             -o msgly-engine-windows-arm64.exe ./cmd/server
         env:
