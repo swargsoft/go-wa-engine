@@ -135,14 +135,14 @@ jobs:
   build-windows:
     runs-on: windows-latest
     outputs:
-      sha256: ${{ steps.checksum.outputs.sha256 }}
+      sha256_amd64: ${{ steps.checksum-amd64.outputs.sha256 }}
+      sha256_arm64: ${{ steps.checksum-arm64.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - name: Build
-        id: build
+      - name: Build amd64
         run: |
           $version = $env:GITHUB_REF -replace 'refs/tags/', ''
           $env:CGO_ENABLED = "1"
@@ -150,41 +150,55 @@ jobs:
             -o msgly-engine-windows-amd64.exe ./cmd/server
         env:
           MODULE: ${{ env.MODULE }}
-      - name: Generate checksum
-        id: checksum
+      - name: Generate checksum amd64
+        id: checksum-amd64
         shell: pwsh
         run: |
           $hash = (Get-FileHash -Algorithm SHA256 msgly-engine-windows-amd64.exe).Hash.ToLower()
           echo "sha256=$hash" >> $env:GITHUB_OUTPUT
           "$hash  msgly-engine-windows-amd64.exe" | Out-File -FilePath msgly-engine-windows-amd64.exe.sha256 -Encoding ascii
-      - name: Sign executable (requires CODESIGN_PFX_B64 secret)
+      - name: Install LLVM for arm64 cross-compilation
+        run: choco install llvm --no-progress -y
+      - name: Build arm64
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF -replace 'refs/tags/', ''
+          $env:CGO_ENABLED = "1"
+          $env:GOOS = "windows"
+          $env:GOARCH = "arm64"
+          $env:CC = "clang --target=aarch64-pc-windows-msvc"
+          go build -ldflags="-s -w -X $env:MODULE/core.Version=$version" `
+            -o msgly-engine-windows-arm64.exe ./cmd/server
+        env:
+          MODULE: ${{ env.MODULE }}
+      - name: Generate checksum arm64
+        id: checksum-arm64
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 msgly-engine-windows-arm64.exe).Hash.ToLower()
+          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
+          "$hash  msgly-engine-windows-arm64.exe" | Out-File -FilePath msgly-engine-windows-arm64.exe.sha256 -Encoding ascii
+      - name: Sign executables (requires CODESIGN_PFX_B64 secret)
         if: ${{ env.CODESIGN_PFX_B64 != '' }}
         shell: pwsh
         env:
           CODESIGN_PFX_B64: ${{ secrets.CODESIGN_PFX_B64 }}
           CODESIGN_PASSWORD: ${{ secrets.CODESIGN_PASSWORD }}
         run: |
-          # Decode PFX from base64 secret
           $pfxPath = "$env:TEMP\swargsoft.pfx"
           [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:CODESIGN_PFX_B64))
-
-          # Find signtool — present on all windows-latest runners
           $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
             Sort-Object FullName -Descending | Select-Object -First 1).FullName
-
-          & $signtool sign `
-            /fd SHA256 `
-            /td SHA256 `
-            /tr http://timestamp.digicert.com `
-            /f $pfxPath `
-            /p $env:CODESIGN_PASSWORD `
-            /d "Msgly Engine" `
-            /du "https://msgly.swargsoft.com" `
-            msgly-engine-windows-amd64.exe
-
+          foreach ($exe in @("msgly-engine-windows-amd64.exe", "msgly-engine-windows-arm64.exe")) {
+            & $signtool sign `
+              /fd SHA256 /td SHA256 `
+              /tr http://timestamp.digicert.com `
+              /f $pfxPath /p $env:CODESIGN_PASSWORD `
+              /d "Msgly Engine" /du "https://msgly.swargsoft.com" `
+              $exe
+            Write-Host "✓ Signed $exe"
+          }
           Remove-Item $pfxPath -Force
-          Write-Host "✓ Signed msgly-engine-windows-amd64.exe"
-
       - uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
@@ -192,6 +206,13 @@ jobs:
           path: |
             msgly-engine-windows-amd64.exe
             msgly-engine-windows-amd64.exe.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64
+          retention-days: 1
+          path: |
+            msgly-engine-windows-arm64.exe
+            msgly-engine-windows-arm64.exe.sha256
 
   # ── Generate aggregated checksums + version manifest ─────────────────────────
   checksums:
@@ -251,7 +272,12 @@ jobs:
               "windows-amd64": {
                 "filename": "msgly-engine-windows-amd64.exe",
                 "url": "${TAG_URL}/msgly-engine-windows-amd64.exe",
-                "sha256": "${{ needs.build-windows.outputs.sha256 }}"
+                "sha256": "${{ needs.build-windows.outputs.sha256_amd64 }}"
+              },
+              "windows-arm64": {
+                "filename": "msgly-engine-windows-arm64.exe",
+                "url": "${TAG_URL}/msgly-engine-windows-arm64.exe",
+                "sha256": "${{ needs.build-windows.outputs.sha256_arm64 }}"
               }
             }
           }
@@ -306,6 +332,8 @@ jobs:
             dist/mac-amd64/msgly-engine-mac-amd64.sha256
             dist/windows-amd64/msgly-engine-windows-amd64.exe
             dist/windows-amd64/msgly-engine-windows-amd64.exe.sha256
+            dist/windows-arm64/msgly-engine-windows-arm64.exe
+            dist/windows-arm64/msgly-engine-windows-arm64.exe.sha256
             dist/checksums/SHA256SUMS
             dist/checksums/latest.json
           body: |
@@ -321,7 +349,8 @@ jobs:
             | macOS Intel | `msgly-engine-mac-amd64` | `${{ needs.build-mac.outputs.sha256_amd64 }}` |
             | Linux x64 | `msgly-engine-linux-amd64` | `${{ needs.build-linux-amd64.outputs.sha256 }}` |
             | Linux arm64 | `msgly-engine-linux-arm64` | `${{ needs.build-linux-arm64.outputs.sha256 }}` |
-            | Windows x64 | `msgly-engine-windows-amd64.exe` | `${{ needs.build-windows.outputs.sha256 }}` |
+            | Windows x64 | `msgly-engine-windows-amd64.exe` | `${{ needs.build-windows.outputs.sha256_amd64 }}` |
+            | Windows arm64 | `msgly-engine-windows-arm64.exe` | `${{ needs.build-windows.outputs.sha256_arm64 }}` |
 
             **Run once in foreground (Mac/Linux):**
             ```bash
