@@ -207,6 +207,8 @@ func (sm *SessionManager) Start(sessionName string) error {
 
 // StartPairing initiates QR code authentication for a session.
 // Creates the session if it doesn't exist.
+// If the session exists but is not yet paired (stale/abandoned pairing),
+// it resets the session data and starts fresh.
 //
 // Flow:
 // 1. Call StartPairing(sessionName)
@@ -214,6 +216,16 @@ func (sm *SessionManager) Start(sessionName string) error {
 // 3. Display QR code to user
 // 4. Wait for pairing.success or pairing.failed
 func (sm *SessionManager) StartPairing(sessionName string) error {
+	// If session exists but is not paired, reset it so we start fresh.
+	sm.mu.Lock()
+	if engine, exists := sm.sessions[sessionName]; exists && !engine.IsPaired() {
+		engine.Stop()
+		delete(sm.sessions, sessionName)
+		sessionDir := filepath.Join(sm.dataDir, sessionName)
+		_ = os.RemoveAll(sessionDir)
+	}
+	sm.mu.Unlock()
+
 	engine, err := sm.getOrCreateSession(sessionName)
 	if err != nil {
 		return err
@@ -341,6 +353,8 @@ func (sm *SessionManager) IsConnected(sessionName string) bool {
 
 // StartPhonePairing initiates code-based phone pairing for a session.
 // Creates the session if it doesn't exist.
+// If the session exists but is not yet paired (stale/abandoned pairing),
+// it resets the session data and starts fresh.
 // phone: full international phone number (with country code, no + prefix).
 // Returns the 8-character pairing code (XXXX-XXXX format).
 //
@@ -350,6 +364,16 @@ func (sm *SessionManager) IsConnected(sessionName string) bool {
 // 3. Show the pairing code to user
 // 4. Wait for pairing.success or pairing.failed event
 func (sm *SessionManager) StartPhonePairing(sessionName, phone string) (string, error) {
+	// If session exists but is not paired, reset it so we start fresh.
+	sm.mu.Lock()
+	if engine, exists := sm.sessions[sessionName]; exists && !engine.IsPaired() {
+		engine.Stop()
+		delete(sm.sessions, sessionName)
+		sessionDir := filepath.Join(sm.dataDir, sessionName)
+		_ = os.RemoveAll(sessionDir)
+	}
+	sm.mu.Unlock()
+
 	engine, err := sm.getOrCreateSession(sessionName)
 	if err != nil {
 		return "", err
