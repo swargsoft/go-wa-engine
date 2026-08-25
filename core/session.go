@@ -39,7 +39,7 @@ import (
 
 // MaxSessions is the hard limit on concurrent WhatsApp sessions.
 // This prevents unbounded resource consumption.
-const MaxSessions = 5
+const MaxSessions = 10
 
 // SessionManager coordinates multiple WhatsApp account sessions.
 // Thread-safe for concurrent access.
