@@ -378,14 +378,89 @@ func (s *Sender) SendContact(jidStr string, displayName string, vcard string) (s
 	return resp.ID, nil
 }
 
-// SendVideo - stub, pending implementation.
+// SendVideo sends a video message with optional caption.
 func (s *Sender) SendVideo(jidStr string, data []byte, caption string, mimeType string) (string, error) {
-	return "", NewError(ErrCodeInternal, "Video sending not yet implemented")
+	if !s.client.IsLoggedIn() {
+		return "", ErrNotConnected
+	}
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		return "", WrapError(ErrCodeInvalidJID, "Invalid JID format", err)
+	}
+	if mimeType == "" {
+		mimeType = "video/mp4"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	uploaded, err := s.client.GetClient().Upload(ctx, data, whatsmeow.MediaVideo)
+	if err != nil {
+		return "", WrapError(ErrCodeMediaFailed, "Failed to upload video", err)
+	}
+	if limiter, _ := s.getLimiterAndPresence(); limiter != nil {
+		limiter.Wait()
+	}
+	msg := &waProto.Message{
+		VideoMessage: &waProto.VideoMessage{
+			Caption: proto.String(caption), Mimetype: proto.String(mimeType),
+			URL: proto.String(uploaded.URL), DirectPath: proto.String(uploaded.DirectPath),
+			MediaKey: uploaded.MediaKey, FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256: uploaded.FileSHA256, FileLength: proto.Uint64(uint64(len(data))),
+		},
+	}
+	sendCtx, sendCancel := context.WithTimeout(context.Background(), s.timeout)
+	defer sendCancel()
+	resp, err := s.client.GetClient().SendMessage(sendCtx, jid, msg)
+	if err != nil {
+		return "", WrapError(ErrCodeSendFailed, "Failed to send video", err)
+	}
+	s.afterSend()
+	s.eventQueue.Push(NewMessageSentEvent(resp.ID, jidStr, "[video] "+caption))
+	return resp.ID, nil
 }
 
-// SendAudio - stub, pending implementation.
+// SendAudio sends an audio message.
+// Set ptt=true for voice notes (push-to-talk), false for regular audio.
 func (s *Sender) SendAudio(jidStr string, data []byte, mimeType string, ptt bool) (string, error) {
-	return "", NewError(ErrCodeInternal, "Audio sending not yet implemented")
+	if !s.client.IsLoggedIn() {
+		return "", ErrNotConnected
+	}
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		return "", WrapError(ErrCodeInvalidJID, "Invalid JID format", err)
+	}
+	if mimeType == "" {
+		if ptt {
+			mimeType = "audio/ogg; codecs=opus"
+		} else {
+			mimeType = "audio/mpeg"
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	uploaded, err := s.client.GetClient().Upload(ctx, data, whatsmeow.MediaAudio)
+	if err != nil {
+		return "", WrapError(ErrCodeMediaFailed, "Failed to upload audio", err)
+	}
+	if limiter, _ := s.getLimiterAndPresence(); limiter != nil {
+		limiter.Wait()
+	}
+	msg := &waProto.Message{
+		AudioMessage: &waProto.AudioMessage{
+			Mimetype: proto.String(mimeType), PTT: proto.Bool(ptt),
+			URL: proto.String(uploaded.URL), DirectPath: proto.String(uploaded.DirectPath),
+			MediaKey: uploaded.MediaKey, FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256: uploaded.FileSHA256, FileLength: proto.Uint64(uint64(len(data))),
+		},
+	}
+	sendCtx, sendCancel := context.WithTimeout(context.Background(), s.timeout)
+	defer sendCancel()
+	resp, err := s.client.GetClient().SendMessage(sendCtx, jid, msg)
+	if err != nil {
+		return "", WrapError(ErrCodeSendFailed, "Failed to send audio", err)
+	}
+	s.afterSend()
+	s.eventQueue.Push(NewMessageSentEvent(resp.ID, jidStr, "[audio]"))
+	return resp.ID, nil
 }
 
 // SendSticker - stub, pending implementation.

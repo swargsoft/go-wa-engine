@@ -239,6 +239,12 @@ func (s *server) routeSession(w http.ResponseWriter, r *http.Request) {
 		s.handleSendText(w, r, name)
 	case action == "send" && sub == "image" && r.Method == http.MethodPost:
 		s.handleSendImage(w, r, name)
+	case action == "send" && sub == "document" && r.Method == http.MethodPost:
+		s.handleSendDocument(w, r, name)
+	case action == "send" && sub == "video" && r.Method == http.MethodPost:
+		s.handleSendVideo(w, r, name)
+	case action == "send" && sub == "audio" && r.Method == http.MethodPost:
+		s.handleSendAudio(w, r, name)
 	case action == "profile" && sub == "" && r.Method == http.MethodGet:
 		s.handleGetOwnProfile(w, r, name)
 	case action == "profile" && sub != "" && r.Method == http.MethodGet:
@@ -441,6 +447,97 @@ func (s *server) handleSendImage(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 	msgID, err := s.sm.SendImageWithCaption(req.To, name, req.Source, req.Caption)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "send_error", err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{"id": msgID, "status": "sent"})
+}
+
+type sendMediaRequest struct {
+	To       string `json:"to"`
+	Source   string `json:"source"`   // base64, data URI, or URL
+	Caption  string `json:"caption"`  // image/video only
+	Filename string `json:"filename"` // document only
+	MimeType string `json:"mime_type"`
+	PTT      bool   `json:"ptt"` // audio only: true = voice note
+}
+
+func (s *server) handleSendDocument(w http.ResponseWriter, r *http.Request, name string) {
+	var req sendMediaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if req.To == "" || req.Source == "" {
+		jsonError(w, http.StatusBadRequest, "missing_fields", "'to' and 'source' are required")
+		return
+	}
+	data, mimeType, err := s.sm.ResolveMediaSource(name, req.Source)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "media_error", err.Error())
+		return
+	}
+	if req.MimeType != "" {
+		mimeType = req.MimeType
+	}
+	filename := req.Filename
+	if filename == "" {
+		filename = "document"
+	}
+	msgID, err := s.sm.SendDocument(req.To, name, data, filename, mimeType)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "send_error", err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{"id": msgID, "status": "sent"})
+}
+
+func (s *server) handleSendVideo(w http.ResponseWriter, r *http.Request, name string) {
+	var req sendMediaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if req.To == "" || req.Source == "" {
+		jsonError(w, http.StatusBadRequest, "missing_fields", "'to' and 'source' are required")
+		return
+	}
+	data, mimeType, err := s.sm.ResolveMediaSource(name, req.Source)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "media_error", err.Error())
+		return
+	}
+	if req.MimeType != "" {
+		mimeType = req.MimeType
+	}
+	msgID, err := s.sm.SendVideo(req.To, name, data, req.Caption, mimeType)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "send_error", err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{"id": msgID, "status": "sent"})
+}
+
+func (s *server) handleSendAudio(w http.ResponseWriter, r *http.Request, name string) {
+	var req sendMediaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if req.To == "" || req.Source == "" {
+		jsonError(w, http.StatusBadRequest, "missing_fields", "'to' and 'source' are required")
+		return
+	}
+	data, mimeType, err := s.sm.ResolveMediaSource(name, req.Source)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "media_error", err.Error())
+		return
+	}
+	if req.MimeType != "" {
+		mimeType = req.MimeType
+	}
+	msgID, err := s.sm.SendAudio(req.To, name, data, mimeType, req.PTT)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "send_error", err.Error())
 		return

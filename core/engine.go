@@ -285,6 +285,27 @@ func (e *Engine) SendImageWithCaption(to, sessionName, imageSource, caption stri
 	return e.sender.SendImageWithCaption(to, imageSource, caption)
 }
 
+func (e *Engine) SendDocument(to string, data []byte, filename, mimeType string) (string, error) {
+	if !e.client.IsConnected() {
+		return "", ErrNotConnected
+	}
+	return e.sender.SendDocument(to, data, filename, mimeType)
+}
+
+func (e *Engine) SendVideo(to string, data []byte, caption, mimeType string) (string, error) {
+	if !e.client.IsConnected() {
+		return "", ErrNotConnected
+	}
+	return e.sender.SendVideo(to, data, caption, mimeType)
+}
+
+func (e *Engine) SendAudio(to string, data []byte, mimeType string, ptt bool) (string, error) {
+	if !e.client.IsConnected() {
+		return "", ErrNotConnected
+	}
+	return e.sender.SendAudio(to, data, mimeType, ptt)
+}
+
 // ----- Events -----
 
 func (e *Engine) PollEvent() string      { return e.eventQueue.PollJSON() }

@@ -444,6 +444,44 @@ func (sm *SessionManager) SendImageWithCaption(to string, sessionName string, im
 	return engine.SendImageWithCaption(to, sessionName, imageSource, caption)
 }
 
+// SendDocument sends a document/PDF via the specified session.
+func (sm *SessionManager) SendDocument(to, sessionName string, data []byte, filename, mimeType string) (string, error) {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return "", err
+	}
+	return engine.SendDocument(to, data, filename, mimeType)
+}
+
+// SendVideo sends a video with optional caption via the specified session.
+func (sm *SessionManager) SendVideo(to, sessionName string, data []byte, caption, mimeType string) (string, error) {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return "", err
+	}
+	return engine.SendVideo(to, data, caption, mimeType)
+}
+
+// SendAudio sends an audio message via the specified session.
+// Set ptt=true for voice notes.
+func (sm *SessionManager) SendAudio(to, sessionName string, data []byte, mimeType string, ptt bool) (string, error) {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return "", err
+	}
+	return engine.SendAudio(to, data, mimeType, ptt)
+}
+
+// ResolveMediaSource resolves a media source (URL, base64, data URI) to raw bytes
+// using the sender of the specified session.
+func (sm *SessionManager) ResolveMediaSource(sessionName, source string) ([]byte, string, error) {
+	engine, err := sm.getSession(sessionName)
+	if err != nil {
+		return nil, "", err
+	}
+	return engine.sender.resolveMediaSource(source)
+}
+
 // ----- Event Methods -----
 
 // PollEvent retrieves the next event from a session's queue.
